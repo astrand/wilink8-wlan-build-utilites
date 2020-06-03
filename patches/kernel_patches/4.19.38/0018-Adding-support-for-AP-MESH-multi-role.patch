@@ -1,0 +1,66 @@
+From 5fbf926b82e3b8eab5da5ca029e92df43e21fa8d Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Mon, 23 Mar 2020 13:46:41 +0200
+Subject: [PATCH 18/18] Adding support for AP+MESH multi role
+
+wl18xx_iface_combinations - adding new field in the new kernel:
+
+.beacon_int_min_gcd = 1,
+
+this option will make support the multi-role
+* @beacon_int_min_gcd: This interface combination supports different
+*          beacon intervals.
+*          = 0 - all beacon intervals for different interface must be same.
+*          > 0 - any beacon interval for the interface part of this combination AND
+*                *GCD* of all beacon intervals from beaconing interfaces of this
+*                combination must be greater or equal to this value.
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ drivers/net/wireless/ti/wl18xx/main.c | 3 +++
+ net/wireless/nl80211.c                | 2 +-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/wl18xx/main.c b/drivers/net/wireless/ti/wl18xx/main.c
+index e40f6d9..f230c28 100644
+--- a/drivers/net/wireless/ti/wl18xx/main.c
++++ b/drivers/net/wireless/ti/wl18xx/main.c
+@@ -1912,6 +1912,7 @@ wl18xx_iface_combinations[] = {
+ 		.limits = wl18xx_iface_ap_limits,
+ 		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_limits),
+ 		.num_different_channels = 1,
++		.beacon_int_min_gcd = 1,
+ 		.radar_detect_widths =	BIT(NL80211_CHAN_NO_HT) |
+ 					BIT(NL80211_CHAN_HT20) |
+ 					BIT(NL80211_CHAN_HT40MINUS) |
+@@ -1921,12 +1922,14 @@ wl18xx_iface_combinations[] = {
+ 		.max_interfaces = 3,
+ 		.limits = wl18xx_iface_ap_cl_limits,
+ 		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_cl_limits),
++		.beacon_int_min_gcd = 1,
+ 		.num_different_channels = 2,
+ 	},
+ 	{
+ 		.max_interfaces = 3,
+ 		.limits = wl18xx_iface_ap_cl_limits,
+ 		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_cl_limits),
++		.beacon_int_min_gcd = 1,
+ 		.num_different_channels = 1,
+ 		.radar_detect_widths =  BIT(NL80211_CHAN_NO_HT) |
+ 								BIT(NL80211_CHAN_HT20) |
+diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
+index 80527f9..d285b7a 100644
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -4387,7 +4387,7 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
+ 	err = rdev_change_beacon(rdev, dev, &params);
+ 	wdev_unlock(wdev);
+ 
+-	if(err != -62 && err)
++	if(err != -62 && err < 0)
+ 	    return -87;
+ 	return err;
+ }
+-- 
+1.9.1
+

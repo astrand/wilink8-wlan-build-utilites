@@ -1,0 +1,30 @@
+From 0c3e3ba519ac442525889098e1164d068c0e1028 Mon Sep 17 00:00:00 2001
+From: Chen Loewy <c-loewy@ti.com>
+Date: Sun, 17 Jan 2016 10:36:45 +0200
+Subject: [PATCH 11/18] Mesh: bypass blockack encryption [WORKAROUND]
+
+Currently didn't implement the blockack encryption mechanism
+in the meanwhile we bypass in the driver MFP check (robust mgmt frames check)
+in order to support blockack session
+
+BYPASSES: WILINK8_SW_DEV-407
+Signed-off-by: Chen Loewy <c-loewy@ti.com>
+---
+ include/linux/ieee80211.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/linux/ieee80211.h b/include/linux/ieee80211.h
+index af72952..0d78015 100644
+--- a/include/linux/ieee80211.h
++++ b/include/linux/ieee80211.h
+@@ -3008,6 +3008,7 @@ static inline bool _ieee80211_is_robust_mgmt_frame(struct ieee80211_hdr *hdr)
+ 			*category != WLAN_CATEGORY_SELF_PROTECTED &&
+ 			*category != WLAN_CATEGORY_UNPROT_DMG &&
+ 			*category != WLAN_CATEGORY_VHT &&
++			*category != WLAN_CATEGORY_BACK &&
+ 			*category != WLAN_CATEGORY_VENDOR_SPECIFIC;
+ 	}
+ 
+-- 
+1.9.1
+

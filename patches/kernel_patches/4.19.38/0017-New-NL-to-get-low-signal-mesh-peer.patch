@@ -1,0 +1,167 @@
+From b9742a450d37984b8f1d48dc34bd08132f667fc9 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Thu, 14 Jul 2016 09:35:49 +0300
+Subject: [PATCH 17/18] New NL to get low signal mesh peer
+
+Added new NL command to get the lowest signal mesh point
+that we are currently connected to.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ include/net/cfg80211.h       |  4 +++-
+ include/uapi/linux/nl80211.h |  2 ++
+ net/wireless/nl80211.c       | 55 ++++++++++++++++++++++++++++++++++++++++++++
+ net/wireless/rdev-ops.h      | 12 ++++++++++
+ net/wireless/trace.h         |  5 ++++
+ 5 files changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/include/net/cfg80211.h b/include/net/cfg80211.h
+index 4de121e..177a0f6 100644
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -3206,7 +3206,9 @@ struct cfg80211_ops {
+ 			     const struct mesh_config *conf,
+ 			     const struct mesh_setup *setup);
+ 	int	(*leave_mesh)(struct wiphy *wiphy, struct net_device *dev);
+-
++	int	(*get_low_signal_mesh)(struct wiphy *wiphy,
++				       struct net_device *dev,
++				       u8 *mac_addr);
+ 	int	(*join_ocb)(struct wiphy *wiphy, struct net_device *dev,
+ 			    struct ocb_setup *setup);
+ 	int	(*leave_ocb)(struct wiphy *wiphy, struct net_device *dev);
+diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
+index 7acc16f..73195b11 100644
+--- a/include/uapi/linux/nl80211.h
++++ b/include/uapi/linux/nl80211.h
+@@ -1245,6 +1245,8 @@ enum nl80211_commands {
+ 
+ 	NL80211_CMD_CONTROL_PORT_FRAME,
+ 
++	NL80211_CMD_GET_LOW_SIGNAL_MESH,
++
+ 	/* add new commands above here */
+ 
+ 	/* used to define NL80211_CMD_MAX below */
+diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
+index 295cd8d..80527f9 100644
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -4387,6 +4387,8 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
+ 	err = rdev_change_beacon(rdev, dev, &params);
+ 	wdev_unlock(wdev);
+ 
++	if(err != -62 && err)
++	    return -87;
+ 	return err;
+ }
+ 
+@@ -7036,6 +7038,52 @@ nl80211_check_scan_flags(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 	return 0;
+ }
+ 
++static int nl80211_get_low_signal_mesh(struct sk_buff *skb,
++				       struct genl_info *info)
++{
++	struct cfg80211_registered_device *rdev = info->user_ptr[0];
++	struct net_device *dev = info->user_ptr[1];
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	u8 mac_addr[ETH_ALEN];
++	int err = 0;
++	void *hdr;
++	struct sk_buff *msg;
++
++	if (wdev->iftype != NL80211_IFTYPE_MESH_POINT)
++		return -EOPNOTSUPP;
++
++	if (!rdev->ops->get_low_signal_mesh)
++		return -EOPNOTSUPP;
++
++	wdev_lock(wdev);
++	err = rdev_get_low_signal_mesh(rdev, dev, mac_addr);
++	wdev_unlock(wdev);
++
++	if (err)
++		return err;
++
++	/* Draw up a netlink message to send back */
++	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
++	if (!msg)
++		return -ENOMEM;
++	hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
++			     NL80211_CMD_GET_LOW_SIGNAL_MESH);
++	if (!hdr)
++		goto out;
++
++	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, mac_addr))
++		goto nla_put_failure;
++
++	genlmsg_end(msg, hdr);
++	return genlmsg_reply(msg, info);
++
++nla_put_failure:
++	genlmsg_cancel(msg, hdr);
++out:
++	nlmsg_free(msg);
++	return -ENOBUFS;
++}
++
+ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
+ {
+ 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+@@ -13303,6 +13351,13 @@ static const struct genl_ops nl80211_ops[] = {
+ 		.internal_flags = NL80211_FLAG_NEED_RTNL,
+ 		/* can be retrieved by unprivileged users */
+ 	},
++	{
++		.cmd = NL80211_CMD_GET_LOW_SIGNAL_MESH,
++		.doit = nl80211_get_low_signal_mesh,
++		.policy = nl80211_policy,
++		.internal_flags = NL80211_FLAG_NEED_NETDEV_UP |
++		NL80211_FLAG_NEED_RTNL,
++	},
+ #ifdef CONFIG_CFG80211_CRDA_SUPPORT
+ 	{
+ 		.cmd = NL80211_CMD_SET_REG,
+diff --git a/net/wireless/rdev-ops.h b/net/wireless/rdev-ops.h
+index 364f5d6..64ce3a2 100644
+--- a/net/wireless/rdev-ops.h
++++ b/net/wireless/rdev-ops.h
+@@ -349,6 +349,18 @@ static inline int rdev_leave_mesh(struct cfg80211_registered_device *rdev,
+ 	return ret;
+ }
+ 
++static
++inline int rdev_get_low_signal_mesh(struct cfg80211_registered_device *rdev,
++				    struct net_device *dev,
++				    u8 *mac_addr)
++{
++	int ret;
++        trace_rdev_get_low_signal_mesh(&rdev->wiphy, dev);
++	ret = rdev->ops->get_low_signal_mesh(&rdev->wiphy, dev, mac_addr);
++	trace_rdev_return_int(&rdev->wiphy, ret);
++	return ret;
++}
++
+ static inline int rdev_join_ocb(struct cfg80211_registered_device *rdev,
+ 				struct net_device *dev,
+ 				struct ocb_setup *setup)
+diff --git a/net/wireless/trace.h b/net/wireless/trace.h
+index 7c73510..5c95e49 100644
+--- a/net/wireless/trace.h
++++ b/net/wireless/trace.h
+@@ -592,6 +592,11 @@ DEFINE_EVENT(wiphy_netdev_evt, rdev_leave_mesh,
+ 	TP_ARGS(wiphy, netdev)
+ );
+ 
++DEFINE_EVENT(wiphy_netdev_evt, rdev_get_low_signal_mesh,
++	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev),
++	TP_ARGS(wiphy, netdev)
++);
++
+ DEFINE_EVENT(wiphy_netdev_evt, rdev_leave_ibss,
+ 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev),
+ 	TP_ARGS(wiphy, netdev)
+-- 
+1.9.1
+

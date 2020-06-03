@@ -1,0 +1,169 @@
+From e87f82db1c2109cf96c91e848f9ec9ec5510870c Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Thu, 14 Jul 2016 09:30:50 +0300
+Subject: [PATCH 16/18] Mesh: get lowest signal MP implementation
+
+Implementation of the  get_lowest_signal NL cmd.
+returns the lowest signal mesh link that has more than 1 link.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ net/mac80211/cfg.c        | 18 ++++++++++++++++++
+ net/mac80211/mesh.c       | 21 ++++++++++++++++++++-
+ net/mac80211/mesh.h       |  4 +++-
+ net/mac80211/mesh_plink.c |  8 +++++++-
+ net/mac80211/sta_info.h   |  2 ++
+ 5 files changed, 50 insertions(+), 3 deletions(-)
+
+diff --git a/net/mac80211/cfg.c b/net/mac80211/cfg.c
+index 53c34f0..7b120fa 100644
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -2065,6 +2065,23 @@ static int ieee80211_leave_mesh(struct wiphy *wiphy, struct net_device *dev)
+ 
+ 	return 0;
+ }
++
++static int ieee80211_get_low_signal_mesh(struct wiphy *wiphy,
++					 struct net_device *dev,
++					 u8 *mac_addr)
++{
++	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
++	struct sta_info *sta = NULL;
++
++	/* get mesh point that has lowest signal and other mesh links*/
++	sta = mesh_get_low_signal_link(sdata);
++	if (sta) {
++		memcpy(mac_addr, sta->addr, ETH_ALEN);
++		return 0;
++	}
++
++	return -ENXIO;
++}
+ #endif
+ 
+ static int ieee80211_change_bss(struct wiphy *wiphy,
+@@ -3849,6 +3866,7 @@ const struct cfg80211_ops mac80211_config_ops = {
+ 	.get_mesh_config = ieee80211_get_mesh_config,
+ 	.join_mesh = ieee80211_join_mesh,
+ 	.leave_mesh = ieee80211_leave_mesh,
++	.get_low_signal_mesh = ieee80211_get_low_signal_mesh,
+ #endif
+ 	.join_ocb = ieee80211_join_ocb,
+ 	.leave_ocb = ieee80211_leave_ocb,
+diff --git a/net/mac80211/mesh.c b/net/mac80211/mesh.c
+index 33e5739..fed1e5c 100644
+--- a/net/mac80211/mesh.c
++++ b/net/mac80211/mesh.c
+@@ -997,6 +997,7 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
+ 	ieee80211_configure_filter(local);
+ }
+ 
++
+ static void ieee80211_mesh_csa_mark_radar(struct ieee80211_sub_if_data *sdata)
+ {
+ 	int err;
+@@ -1012,6 +1013,22 @@ static void ieee80211_mesh_csa_mark_radar(struct ieee80211_sub_if_data *sdata)
+ 				     &sdata->vif.bss_conf.chandef, GFP_ATOMIC);
+ }
+ 
++struct sta_info *mesh_get_low_signal_link(struct ieee80211_sub_if_data *sdata)
++{
++	struct ieee80211_local *local = sdata->local;
++	struct sta_info *sta;
++	struct sta_info *res = NULL;
++
++	list_for_each_entry_rcu(sta, &local->sta_list, list) {
++		if ((sta->mesh->num_of_peers > 1) &&
++		    (!res || res->mesh->signal > sta->mesh->signal)) {
++			res = sta;
++		}
++	}
++
++	return res;
++}
++
+ static bool
+ ieee80211_mesh_process_chnswitch(struct ieee80211_sub_if_data *sdata,
+ 				 struct ieee802_11_elems *elems, bool beacon)
+@@ -1225,13 +1242,15 @@ static void ieee80211_mesh_rx_bcn_presp(struct ieee80211_sub_if_data *sdata,
+ 	if (!channel || channel->flags & IEEE80211_CHAN_DISABLED)
+ 		return;
+ 
++
+ 	if (mesh_matches_local(sdata, &elems)) {
+ 		mpl_dbg(sdata, "rssi_threshold=%d,rx_status->signal=%d\n",
+ 			sdata->u.mesh.mshcfg.rssi_threshold, rx_status->signal);
+ 		if (!sdata->u.mesh.user_mpm ||
+ 		    sdata->u.mesh.mshcfg.rssi_threshold == 0 ||
+ 		    sdata->u.mesh.mshcfg.rssi_threshold < rx_status->signal)
+-			mesh_neighbour_update(sdata, mgmt->sa, &elems);
++			mesh_neighbour_update(sdata, mgmt->sa, &elems,
++                    rx_status->signal);
+ 	}
+ 
+ 	if (ifmsh->sync_ops)
+diff --git a/net/mac80211/mesh.h b/net/mac80211/mesh.h
+index e84103b..e68b0dc 100644
+--- a/net/mac80211/mesh.h
++++ b/net/mac80211/mesh.h
+@@ -229,6 +229,7 @@ void ieee80211_mesh_init_sdata(struct ieee80211_sub_if_data *sdata);
+ void ieee80211_mesh_teardown_sdata(struct ieee80211_sub_if_data *sdata);
+ int ieee80211_start_mesh(struct ieee80211_sub_if_data *sdata);
+ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata);
++struct sta_info *mesh_get_low_signal_link(struct ieee80211_sub_if_data *sdata);
+ void ieee80211_mesh_root_setup(struct ieee80211_if_mesh *ifmsh);
+ const struct ieee80211_mesh_sync_ops *ieee80211_mesh_sync_ops_get(u8 method);
+ /* wrapper for ieee80211_bss_info_change_notify() */
+@@ -279,7 +280,8 @@ int mesh_gate_num(struct ieee80211_sub_if_data *sdata);
+ 
+ /* Mesh plinks */
+ void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
+-			   u8 *hw_addr, struct ieee802_11_elems *ie);
++			   u8 *hw_addr, struct ieee802_11_elems *elems,
++			   s8 signal);
+ bool mesh_peer_accepts_plinks(struct ieee802_11_elems *ie);
+ u32 mesh_accept_plinks_update(struct ieee80211_sub_if_data *sdata);
+ void mesh_plink_timer(struct timer_list *t);
+diff --git a/net/mac80211/mesh_plink.c b/net/mac80211/mesh_plink.c
+index 5b5b0f9..7cade22 100644
+--- a/net/mac80211/mesh_plink.c
++++ b/net/mac80211/mesh_plink.c
+@@ -581,7 +581,8 @@ mesh_sta_info_get(struct ieee80211_sub_if_data *sdata,
+  */
+ void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
+ 			   u8 *hw_addr,
+-			   struct ieee802_11_elems *elems)
++			   struct ieee802_11_elems *elems,
++			   s8 signal)
+ {
+ 	struct sta_info *sta;
+ 	u32 changed = 0;
+@@ -590,6 +591,11 @@ void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
+ 	if (!sta)
+ 		goto out;
+ 
++	/* Update neighbour signal level*/
++	sta->mesh->signal = signal;
++	sta->mesh->num_of_peers =
++		(elems->mesh_config->meshconf_form >> 1) & 0x3F;
++
+ 	if (mesh_peer_accepts_plinks(elems) &&
+ 	    sta->mesh->plink_state == NL80211_PLINK_LISTEN &&
+ 	    sdata->u.mesh.accepting_plinks &&
+diff --git a/net/mac80211/sta_info.h b/net/mac80211/sta_info.h
+index 9a04327..b501d2d 100644
+--- a/net/mac80211/sta_info.h
++++ b/net/mac80211/sta_info.h
+@@ -384,6 +384,8 @@ struct mesh_sta {
+ 
+ 	enum nl80211_plink_state plink_state;
+ 	u32 plink_timeout;
++	s8 signal;
++	u8 num_of_peers;
+ 
+ 	/* mesh power save */
+ 	enum nl80211_mesh_power_mode local_pm;
+-- 
+1.9.1
+

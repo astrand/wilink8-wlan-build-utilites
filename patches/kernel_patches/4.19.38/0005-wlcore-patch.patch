@@ -1,0 +1,48 @@
+From b35347c68a46514894c21bf91a4244275516e7b7 Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Wed, 26 Feb 2020 17:23:57 +0200
+Subject: [PATCH 05/18] wlcore patch
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ drivers/net/wireless/ti/wlcore/cmd.c  | 7 -------
+ drivers/net/wireless/ti/wlcore/main.c | 5 -----
+ 2 files changed, 12 deletions(-)
+
+diff --git a/drivers/net/wireless/ti/wlcore/cmd.c b/drivers/net/wireless/ti/wlcore/cmd.c
+index 874b7ec..49c96a5 100644
+--- a/drivers/net/wireless/ti/wlcore/cmd.c
++++ b/drivers/net/wireless/ti/wlcore/cmd.c
+@@ -1581,13 +1581,6 @@ int wl12xx_cmd_add_peer(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+ 		cpu_to_le32(wl1271_tx_enabled_rates_get(wl, sta_rates,
+ 							wlvif->band));
+ 
+-	if (!cmd->supported_rates) {
+-		wl1271_debug(DEBUG_CMD,
+-			     "peer has no supported rates yet, configuring basic rates: 0x%x",
+-			     wlvif->basic_rate_set);
+-		cmd->supported_rates = cpu_to_le32(wlvif->basic_rate_set);
+-	}
+-
+ 	wl1271_debug(DEBUG_CMD, "new peer rates=0x%x queues=0x%x",
+ 		     cmd->supported_rates, sta->uapsd_queues);
+ 
+diff --git a/drivers/net/wireless/ti/wlcore/main.c b/drivers/net/wireless/ti/wlcore/main.c
+index 36f6b95..d7563a8 100644
+--- a/drivers/net/wireless/ti/wlcore/main.c
++++ b/drivers/net/wireless/ti/wlcore/main.c
+@@ -5234,11 +5234,6 @@ static int wl12xx_update_sta_state(struct wl1271 *wl,
+ 		if (ret < 0)
+ 			return ret;
+ 
+-		/* reconfigure rates */
+-		ret = wl12xx_cmd_add_peer(wl, wlvif, sta, wl_sta->hlid);
+-		if (ret < 0)
+-			return ret;
+-
+ 		ret = wl1271_acx_set_ht_capabilities(wl, &sta->ht_cap, true,
+ 						     wl_sta->hlid);
+ 		if (ret)
+-- 
+1.9.1
+
