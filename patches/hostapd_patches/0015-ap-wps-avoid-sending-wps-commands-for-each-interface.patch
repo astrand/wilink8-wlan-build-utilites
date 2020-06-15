@@ -1,0 +1,35 @@
+From bde41897a375a30fd4c6e4e24e959c6d03b136ce Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Thu, 31 Jul 2014 17:22:35 +0300
+Subject: [PATCH 15/47] ap: wps: avoid sending wps commands for each interface
+ [AP AP]
+
+This is probably leftover from old times. it can actually
+cause some issues (e.g. overlapping pbc).
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/wps_hostapd.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/ap/wps_hostapd.c b/src/ap/wps_hostapd.c
+index 6161cdb..e4e7b31 100644
+--- a/src/ap/wps_hostapd.c
++++ b/src/ap/wps_hostapd.c
+@@ -81,6 +81,13 @@ static int hostapd_wps_for_each(struct hostapd_data *hapd,
+ {
+ 	struct hostapd_iface *iface = hapd->iface;
+ 	struct wps_for_each_data data;
++
++	/*
++	 * the "for_each" here seems like leftover when multiple control
++	 * interfaces were not used. call only the current hapd now.
++	 */
++	return func(hapd, ctx);
++
+ 	data.func = func;
+ 	data.ctx = ctx;
+ 	data.calling_hapd = hapd;
+-- 
+1.9.1
+

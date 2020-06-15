@@ -1,0 +1,362 @@
+From aeea92d55d118193fc3cfd0f038ee20849b4ce20 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Tue, 10 May 2016 14:19:34 +0300
+Subject: [PATCH 41/47] mesh on demand: Several fixes
+
+Contains some scan changes and bug fixes
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ wpa_supplicant/bgscan_learn.c     |   7 +--
+ wpa_supplicant/events.c           |  34 +++++--------
+ wpa_supplicant/mesh.c             |  16 +++---
+ wpa_supplicant/mesh_mpm.c         | 103 +++++++++++++++++---------------------
+ wpa_supplicant/wpa_supplicant_i.h |   7 +--
+ 5 files changed, 70 insertions(+), 97 deletions(-)
+
+diff --git a/wpa_supplicant/bgscan_learn.c b/wpa_supplicant/bgscan_learn.c
+index c7f5208..e916b69 100644
+--- a/wpa_supplicant/bgscan_learn.c
++++ b/wpa_supplicant/bgscan_learn.c
+@@ -416,14 +416,11 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
+ 			   "signal strength monitoring");
+ 	}
+ 
+-	if (wpa_s->global->mesh_on_demand.enabled)
+-	{
++	if (wpa_s->global->mesh_on_demand.enabled) {
+ 		data->supp_freqs = os_malloc(2*sizeof(int));
+ 		data->supp_freqs[0] = wpa_s->assoc_freq;
+ 		data->supp_freqs[1] = 0;
+-	}
+-	else
+-	{
++	} else {
+ 		data->supp_freqs = bgscan_learn_get_supp_freqs(wpa_s);
+ 	}
+ 
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 084993b..ed5d34f 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -1991,29 +1991,25 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 		int skip;
+ 
+ 		// in case we are running mesh on demand we need to see if we would like to connect at all
+-		if (wpa_s->global->mesh_on_demand.enabled)
+-		{
++		if (wpa_s->global->mesh_on_demand.enabled) {
+ 			// we should only check this for the station and not the mesh interface
+-			if (wpa_s != wpa_s->global->mesh_on_demand.mesh_wpa_s)
+-			{
++			if (wpa_s != wpa_s->global->mesh_on_demand.mesh_wpa_s) {
+ 				wpa_s->global->mesh_on_demand.meshBlocked = TRUE;
+-				wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ============= MESH IS BLOCKED");
++				wpa_msg(wpa_s, MSG_DEBUG, "Mesh on demand - ============= MESH IS BLOCKED");
+ 
+ 				// if we are below the connection threshold
+-				if (selected->level < wpa_s->global->mesh_on_demand.signal_threshold)
+-				{
++				if (selected->level < wpa_s->global->mesh_on_demand.signal_threshold) {
+ 					wpa_s->global->mesh_on_demand.meshBlocked = FALSE;
+-					wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ********************* MESH IS UNBLOCKED");
++					wpa_msg(wpa_s, MSG_DEBUG, "Mesh on demand - ********************* MESH IS UNBLOCKED");
+ 
+-					if (wpa_s->global->mesh_on_demand.anyMeshConnected)
+-					{
+-						wpa_supplicant_req_scan(wpa_s,60,0);
+-						wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - Mesh connected and bad RSSI - Don't connect");
++					if (wpa_s->global->mesh_on_demand.anyMeshConnected) {
++						if (wpa_supplicant_req_sched_scan(wpa_s))
++							wpa_supplicant_req_new_scan(wpa_s, wpa_s->scan_interval, 0);
++						wpa_msg(wpa_s, MSG_DEBUG, "Mesh on demand - Mesh connected and bad RSSI - Don't connect");
+ 						return -1;
+ 					}
+ 				}
+ 			}
+-
+ 		}
+ 
+ 		skip = !wpa_supplicant_need_to_roam(wpa_s, selected, ssid);
+@@ -4774,22 +4770,16 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
+ 		* If Mesh on Demand is configured try to connect to Mesh network
+ 		* and disconnect from AP
+ 		*/
+-		if (wpa_s->global->mesh_on_demand.enabled)
+-		{
+-			if (data->signal_change.above_threshold == FALSE)
+-			{
++		if (wpa_s->global->mesh_on_demand.enabled) {
++			if (data->signal_change.above_threshold == FALSE) {
+ 				wpa_printf(MSG_INFO, "Threshold was crossed downwards - RSSI is lower");
+ 				wpa_s->global->mesh_on_demand.meshBlocked = FALSE;
+ 				wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ********************* MESH IS UNBLOCKED");
+-
+-			}
+-			else
+-			{
++			} else {
+ 				wpa_printf(MSG_INFO, "Threshold was crossed upwards - RSSI is higher");
+ 				wpa_s->global->mesh_on_demand.meshBlocked = TRUE;
+ 				wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ============= MESH IS BLOCKED");
+ 			}
+-
+ 		}
+ 
+ 		break;
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index d075b72..621eefa 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -407,8 +407,7 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+        /*
+        * Initialize mesh on demand parameters
+        */
+-	if (wpa_s->conf->mesh_on_demand)
+-	{
++	if (wpa_s->conf->mesh_on_demand) {
+ 		struct i802_bss *bss;
+ 		struct wpa_driver_nl80211_data *drv;
+ 		struct wpa_supplicant *keep_wpa_s;
+@@ -434,8 +433,7 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 
+ 		keep_wpa_s = wpa_s->global->ifaces;
+ 
+-		while (keep_wpa_s && !found)
+-		{
++		while (keep_wpa_s && !found) {
+ 			bss = keep_wpa_s->drv_priv;
+ 			drv = bss->drv;
+ 
+@@ -445,21 +443,19 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 				keep_wpa_s = keep_wpa_s->next;
+ 		}
+ 
+-		if (found)
+-		{
++		if (found) {
++			wpa_s->global->mesh_on_demand.sta_wpa_s = keep_wpa_s;
++
+ 			/*
+ 			* we have found the station connection and it's already connected
+ 			* stop the bgscan and send a new bgscan with the mesh on demand RSSI
+ 			* threshold parameters
+ 			*/
+-
+-			if (keep_wpa_s->wpa_state == WPA_COMPLETED)
+-			{
++			if (keep_wpa_s->wpa_state == WPA_COMPLETED) {
+ 				wpa_supplicant_stop_bgscan(keep_wpa_s);
+ 				wpa_supplicant_start_bgscan(keep_wpa_s);
+ 			}
+ 		}
+-
+ 	}
+ 
+ 	return 0;
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index 38475e1..444ddfd 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -458,10 +458,7 @@ static void mesh_mpm_fsm_restart(struct wpa_supplicant *wpa_s,
+ {
+ 	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
+ 
+-	hapd->num_plinks--;
+-
+ 	eloop_cancel_timeout(plink_timer, wpa_s, sta);
+-
+ 	ap_free_sta(hapd, sta);
+ }
+ 
+@@ -591,7 +588,12 @@ static void plink_timer(void *eloop_ctx, void *user_data)
+ 			wpa_auth_pmksa_remove(hapd->wpa_auth, sta->addr);
+ 		}
+ 		mesh_mpm_fsm_restart(wpa_s, sta);
+-		break;
++
++		if (wpa_s->global->mesh_on_demand.enabled &&
++		    hapd && (hapd->num_plinks == 0)) {
++			wpa_s->global->mesh_on_demand.anyMeshConnected = FALSE;
++		}
++                break;
+ 	default:
+ 		break;
+ 	}
+@@ -622,6 +624,10 @@ int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
+ 	int reason = WLAN_REASON_MESH_PEERING_CANCELLED;
+ 
+ 	if (sta) {
++		/* Switching from established to holding - decrease plinks count*/
++		if (sta->plink_state == PLINK_ESTAB)
++			hapd->num_plinks--;
++
+ 		wpa_mesh_set_plink_state(wpa_s, sta, PLINK_HOLDING);
+ 
+ 		mesh_mpm_send_plink_action(wpa_s, sta, PLINK_CLOSE, reason);
+@@ -911,8 +917,7 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	if (wpa_s->ifmsh->mesh_deinit_process)
+                 return;
+ 
+-	if ( (wpa_s->global->mesh_on_demand.enabled) && (wpa_s->global->mesh_on_demand.meshBlocked) )
+-	{
++	if ((wpa_s->global->mesh_on_demand.enabled) && (wpa_s->global->mesh_on_demand.meshBlocked)) {
+ 		if (!data->mesh_pending_auth)
+ 			return;
+ 
+@@ -924,11 +929,9 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 		*/
+ 		mgmt = wpabuf_head(data->mesh_pending_auth);
+ 		os_reltime_age(&data->mesh_pending_auth_time, &age);
+-		if (age.sec < 2 && os_memcmp(mgmt->sa, addr, ETH_ALEN) == 0)
+-		{
++		if (age.sec < 2 && os_memcmp(mgmt->sa, addr, ETH_ALEN) == 0) {
+ 			data->mesh_pending_auth = FALSE;
+-		}
+-		else
++		} else
+ 			return;
+ 	}
+ 
+@@ -940,8 +943,7 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+                wpa_msg(wpa_s, MSG_ERROR, "will not initiate new peer link with "
+                        MACSTR " either no_auto_peer or peer does not allow new links", MAC2STR(addr));
+ 
+-		if (data->mesh_pending_auth)
+-		{
++		if (data->mesh_pending_auth) {
+ 			mgmt = wpabuf_head(data->mesh_pending_auth);
+ 			os_reltime_age(&data->mesh_pending_auth_time, &age);
+ 			if (age.sec < 2 && os_memcmp(mgmt->sa, addr, ETH_ALEN) == 0) {
+@@ -1062,7 +1064,7 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ {
+ 	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
+ 	struct mesh_conf *conf = wpa_s->ifmsh->mconf;
+-	struct wpa_supplicant *keep_wpa_s;
++	struct wpa_supplicant *keep_wpa_s = NULL;
+ 	int found = FALSE;
+ 
+ 	wpa_msg(wpa_s, MSG_DEBUG, "MPM " MACSTR " state %s event %s",
+@@ -1153,54 +1155,34 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 			mesh_mpm_plink_estab(wpa_s, sta);
+ 
+ 			// we've just got mesh link connected
+-			if (wpa_s->global->mesh_on_demand.enabled)
+-			{
+-				struct i802_bss *bss;
+-				struct wpa_driver_nl80211_data *drv;
+-
++			if (wpa_s->global->mesh_on_demand.enabled) {
+ 				wpa_s->global->mesh_on_demand.anyMeshConnected = TRUE;
+ 
+-				keep_wpa_s = wpa_s->global->ifaces;
+-
+-				while (keep_wpa_s && !found)
+-				{
+-					bss = keep_wpa_s->drv_priv;
+-					drv = bss->drv;
+-
+-					if (drv->nlmode == NL80211_IFTYPE_STATION)
+-						found = TRUE;
+-					else
+-						keep_wpa_s = keep_wpa_s->next;
++				keep_wpa_s = wpa_s->global->mesh_on_demand.sta_wpa_s;
++				if (keep_wpa_s && (keep_wpa_s->wpa_state == WPA_COMPLETED) &&
++				    (wpa_s->global->mesh_on_demand.meshBlocked == FALSE)) {
++					struct wpa_ssid *keep_current_ssid;
++
++					keep_current_ssid = keep_wpa_s->current_ssid;
++					wpa_msg(wpa_s, MSG_DEBUG, "mesh on demand: disconnect station current SSID is: %s!!!",wpa_ssid_txt(keep_current_ssid->ssid,keep_current_ssid->ssid_len));
++
++					/*
++					 * disconnect station from AP
++					 */
++					keep_wpa_s->reassociate = 0;
++					keep_wpa_s->disconnected = 1;
++					wpa_supplicant_cancel_sched_scan(keep_wpa_s);
++					wpa_supplicant_cancel_scan(keep_wpa_s);
++					wpa_supplicant_deauthenticate(keep_wpa_s,
++								      WLAN_REASON_DEAUTH_LEAVING);
++					eloop_cancel_timeout(wpas_network_reenabled, keep_wpa_s, NULL);
++
++					/*
++					 * reselect the network we've just disconnected from and try to reconnect
++					 */
++					wpa_supplicant_select_network(keep_wpa_s, keep_current_ssid);
+ 				}
+ 			}
+-
+-			if ( (found) && (keep_wpa_s->wpa_state == WPA_COMPLETED) &&
+-						 (wpa_s->global->mesh_on_demand.meshBlocked == FALSE) )
+-			{
+-				struct wpa_ssid *keep_current_ssid;
+-
+-				keep_current_ssid = keep_wpa_s->current_ssid;
+-
+-				wpa_msg(wpa_s, MSG_DEBUG, "mesh on demand: disconnect station current SSID is: %s!!!",wpa_ssid_txt(keep_current_ssid->ssid,keep_current_ssid->ssid_len));
+-
+-				/*
+-				* disconnect station from AP
+-				*/
+-				keep_wpa_s->reassociate = 0;
+-				keep_wpa_s->disconnected = 1;
+-				wpa_supplicant_cancel_sched_scan(keep_wpa_s);
+-				wpa_supplicant_cancel_scan(keep_wpa_s);
+-				wpa_supplicant_deauthenticate(keep_wpa_s,
+-							      WLAN_REASON_DEAUTH_LEAVING);
+-				eloop_cancel_timeout(wpas_network_reenabled, keep_wpa_s, NULL);
+-
+-				/*
+-				* reselect the network we've just disconnected from and try to reconnect
+-				*/
+-				wpa_supplicant_select_network(keep_wpa_s,keep_current_ssid);
+-
+-			}
+-
+ 			break;
+ 		default:
+ 			break;
+@@ -1243,6 +1225,7 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 		case CNF_RJCT:
+ 		case CLS_ACPT:
+ 			wpa_mesh_set_plink_state(wpa_s, sta, PLINK_HOLDING);
++            hapd->num_plinks--;
+ 			if (!reason)
+ 				reason = WLAN_REASON_MESH_CLOSE_RCVD;
+ 
+@@ -1591,6 +1574,12 @@ void mesh_mpm_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
+ {
+ 	if (sta->plink_state == PLINK_ESTAB)
+ 		hapd->num_plinks--;
++
+ 	eloop_cancel_timeout(plink_timer, ELOOP_ALL_CTX, sta);
+ 	eloop_cancel_timeout(mesh_auth_timer, ELOOP_ALL_CTX, sta);
++
++	if (hapd->num_plinks == 0) {
++		struct wpa_supplicant *wpa_s = hapd->iface->owner;
++                wpa_s->global->mesh_on_demand.anyMeshConnected = FALSE;
++	}
+ }
+diff --git a/wpa_supplicant/wpa_supplicant_i.h b/wpa_supplicant/wpa_supplicant_i.h
+index dfc7752..ed66d99 100644
+--- a/wpa_supplicant/wpa_supplicant_i.h
++++ b/wpa_supplicant/wpa_supplicant_i.h
+@@ -256,11 +256,12 @@ struct p2p_srv_upnp {
+ };
+ 
+ struct mesh_on_demand {
+-	Boolean  				meshBlocked;
++	Boolean  			meshBlocked;
+ 	Boolean				anyMeshConnected;
+-	struct wpa_supplicant *mesh_wpa_s;
++        struct wpa_supplicant 		*sta_wpa_s;
++	struct wpa_supplicant 		*mesh_wpa_s;
+ 	Boolean				enabled;
+-	int					signal_threshold;
++	int				signal_threshold;
+ 	char 				signal_threshold_name[30];
+ };
+ 
+-- 
+1.9.1
+

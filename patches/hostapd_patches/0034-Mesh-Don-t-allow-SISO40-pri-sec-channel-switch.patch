@@ -1,0 +1,37 @@
+From 3230b2f4ceb3a5ec0eb9cffdf341e22fdeb39990 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Thu, 31 Mar 2016 14:02:18 +0200
+Subject: [PATCH 34/47] Mesh: Don't allow SISO40 pri/sec channel switch
+
+Disable the option for switching primary and
+secondary channels in SISO40.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ wpa_supplicant/wpa_supplicant.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index ecc46af..0c33b20 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -2326,9 +2326,13 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
+ 			break;
+ 		case 2:
+ 			/* Switch pri/sec channels */
+-			freq->freq = hw_get_freq(mode, sec_chan->chan);
+-			freq->sec_channel_offset = -freq->sec_channel_offset;
+-			freq->channel = sec_chan->chan;
++			if (ssid->mode == WPAS_MODE_MESH) {
++                                wpa_printf(MSG_INFO, "Mesh will NOT Switch channels");
++			} else{
++				freq->freq = hw_get_freq(mode, sec_chan->chan);
++				freq->sec_channel_offset = -freq->sec_channel_offset;
++				freq->channel = sec_chan->chan;
++			}
+ 			break;
+ 		default:
+ 			freq->sec_channel_offset = 0;
+-- 
+1.9.1
+

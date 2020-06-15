@@ -1,0 +1,32 @@
+From 13df0d4c4d5e8d29a8061ffecff2d764143f443a Mon Sep 17 00:00:00 2001
+From: Yaniv Machani <yanivma@ti.com>
+Date: Wed, 3 Feb 2016 04:22:44 -0800
+Subject: [PATCH 27/47] mesh : set OFDM basic rates as default
+
+Set basic rates for mesh as OFDM only.
+This is to improve the reliability of management frames.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+Signed-off-by: Yaniv Machani <yanivma@ti.com>
+---
+ wpa_supplicant/mesh.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 4b1053d..fb72ed8 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -248,7 +248,9 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 	struct hostapd_data *bss;
+ 	struct hostapd_config *conf;
+ 	struct mesh_conf *mconf;
+-	int basic_rates_erp[] = { 10, 20, 55, 60, 110, 120, 240, -1 };
++	int basic_rates_erp[] = { 60, 120, 240, -1 };
++	static int default_groups[] = { 19, 20, 21, 25, 26, -1 };
++	size_t len;
+ 	int rate_len;
+ 	int frequency;
+ 
+-- 
+1.9.1
+

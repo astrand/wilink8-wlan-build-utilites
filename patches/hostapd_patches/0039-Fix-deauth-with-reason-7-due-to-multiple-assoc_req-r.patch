@@ -1,0 +1,54 @@
+From c5512e9023ba4a880b504c1b4ed1c2772f24c632 Mon Sep 17 00:00:00 2001
+From: Eyal Shapira <eyal@wizery.com>
+Date: Wed, 8 Feb 2012 16:51:01 +0200
+Subject: [PATCH 39/47] Fix deauth with reason 7 due to multiple assoc_req
+ received
+
+Additional assoc_reqs received after an initial assoc_req (due to a timeout
+in the STA) was already being handled caused the handle_assoc flow to
+run again and in the process delete the station added to the driver
+(in add_pre_assoc_sta). A race would occur where assoc_resp
+was already sent to the STA (as part of the handling of the initial
+assoc_req) and it sent a null data packet which arrived
+while the station was deleted. This caused the packet to be classified
+as a class 3 frame coming from an unknown STA and a deauth
+would occur. Fix this by discarding additional assoc_req between
+receiving the 1st assoc_req and getting a tx callback for the assoc_resp.
+
+Signed-off-by: Eyal Shapira <eyal@wizery.com>
+---
+ src/ap/ieee802_11.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 4321cdb..8390c79 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -4023,6 +4023,15 @@ static void handle_assoc(struct hostapd_data *hapd,
+ 			       seq_ctrl);
+ 		return;
+ 	}
++
++	if ((sta->flags & WLAN_STA_ASSOC_REQ_OK) &&
++	    !(sta->flags & WLAN_STA_ASSOC)) {
++		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
++			       HOSTAPD_LEVEL_INFO, "Station sent another "
++			       "assoc req before assoc resp. Discarding");
++		return;
++	}
++
+ 	sta->last_seq_ctrl = seq_ctrl;
+ 	sta->last_subtype = reassoc ? WLAN_FC_STYPE_REASSOC_REQ :
+ 		WLAN_FC_STYPE_ASSOC_REQ;
+@@ -4824,7 +4833,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
+ 		/* The STA is added only in case of SUCCESS */
+ 		if (status == WLAN_STATUS_SUCCESS)
+ 			hostapd_drv_sta_remove(hapd, sta->addr);
+-
++		sta->flags &= ~WLAN_STA_ASSOC_REQ_OK;
+ 		return;
+ 	}
+ 
+-- 
+1.9.1
+

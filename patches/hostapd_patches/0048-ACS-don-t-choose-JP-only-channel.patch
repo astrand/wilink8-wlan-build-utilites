@@ -1,0 +1,62 @@
+From cb51114efe95553ea1f1fcd7f03a9c9c068f43c0 Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Thu, 26 Mar 2020 10:11:00 +0200
+Subject: [PATCH] =?UTF-8?q?ACS:=20don=E2=80=99t=20choose=20JP-only=20chann?=
+ =?UTF-8?q?el=20APUT:=20unloads=20on=20unsupported=20channels=20(JP-only?=
+ =?UTF-8?q?=20channel)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This patch not allow to load AP on JP-only channel
+14, 38, 42, and 46.
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ src/ap/hw_features.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index 5ed8def..9f6f17a 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -739,7 +739,7 @@ static int hostapd_is_usable_chan(struct hostapd_iface *iface,
+ 				  int channel, int primary)
+ {
+ 	struct hostapd_channel_data *chan;
+-
++	int c;
+ 	if (!iface->current_mode)
+ 		return 0;
+ 
+@@ -747,6 +747,18 @@ static int hostapd_is_usable_chan(struct hostapd_iface *iface,
+ 	if (!chan)
+ 		return 0;
+ 
++    c = chan->chan;
++   
++    /* skip channels 38, 42, 46 if country is not JP */
++    if (!os_memcmp(iface->conf->country, "JP", 2) == 0)
++    {
++        if (c == 38 || c == 42 || c == 46)
++        {
++            wpa_printf(MSG_INFO, "Channel %d not allowed for AP mode in this country code",c);
++            return 0;
++        }
++    }
++
+ 	if ((primary && chan_pri_allowed(chan)) ||
+ 	    (!primary && !(chan->flag & HOSTAPD_CHAN_DISABLED)))
+ 		return 1;
+@@ -901,7 +913,7 @@ static int valid_ap_channel(struct hostapd_iface *iface, int chan)
+ 		return 0;
+ 
+ 	/* don't allow JP-only channels */
+-	if (chan == 38 || chan == 42)
++	if (chan == 38 || chan == 42 || chan == 46)
+ 		return 0;
+ 
+ 	/* don't allow channels on the the ACS blacklist */
+-- 
+1.9.1
+

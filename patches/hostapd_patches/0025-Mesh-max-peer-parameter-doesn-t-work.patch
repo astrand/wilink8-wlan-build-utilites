@@ -1,0 +1,88 @@
+From 38ea9a4d09add56c21e355f4352fd1b9ec258efb Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Tue, 26 Jan 2016 15:19:28 +0200
+Subject: [PATCH 25/47] Mesh: max peer parameter doesn't work
+
+1. Send the max_peer parameter to the driver even if user_mpm is set
+	mac80211 is using this param when building the beacon.
+2. When receiving a peer's beacon - check the the capability bit that
+	indicates if peer is accepting new connections. Do not initiate
+	connection with this peer if bit is not set.
+
+fixes #WILINK8_SW_DEV-439
+      #WILINK8_SW_DEV-417
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ src/common/ieee802_11_defs.h | 17 +++++++++++++++++
+ wpa_supplicant/mesh_mpm.c    | 14 +++++++++-----
+ 2 files changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index b0aa913..b06b663 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -697,6 +697,12 @@
+ #define WLAN_TIMEOUT_KEY_LIFETIME 2
+ #define WLAN_TIMEOUT_ASSOC_COMEBACK 3
+ 
++/* Mesh config info element - capability options*/
++#define	WLAN_MESHCONF_CAPAB_ACCEPT_PLINKS 0x01
++#define	WLAN_MESHCONF_CAPAB_FORWARDING 0x08
++#define	WLAN_MESHCONF_CAPAB_TBTT_ADJUSTING 0x20
++#define	WLAN_MESHCONF_CAPAB_POWER_SAVE_LEVEL 0x40
++
+ /* Interworking element (IEEE 802.11u) - Access Network Options */
+ #define INTERWORKING_ANO_ACCESS_NETWORK_MASK 0x0f
+ #define INTERWORKING_ANO_INTERNET 0x10
+@@ -1063,6 +1069,17 @@ struct ieee80211_ht_operation {
+ 	u8 basic_mcs_set[16];
+ } STRUCT_PACKED;
+ 
++/* Mesh Config element */
++struct ieee80211_mesh_config {
++	u8 psel;
++	u8 pmetric;
++	u8 congest;
++	u8 synch;
++	u8 auth_prot;
++	u8 form_info;
++	u8 capab;
++} STRUCT_PACKED;
++
+ 
+ struct ieee80211_obss_scan_parameters {
+ 	le16 scan_passive_dwell;
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index 4a163b6..cc5d29c 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -804,16 +804,20 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	struct hostapd_data *data = wpa_s->ifmsh->bss[0];
+ 	struct sta_info *sta;
+ 	struct wpa_ssid *ssid = wpa_s->current_ssid;
++	struct ieee80211_mesh_config *mesh_conf_ie =
++		(struct ieee80211_mesh_config *)elems->mesh_config;
+ 
+ 	sta = mesh_mpm_add_peer(wpa_s, addr, elems);
+ 	if (!sta)
+ 		return;
+ 
+-	if (ssid && ssid->no_auto_peer &&
+-	    (is_zero_ether_addr(data->mesh_required_peer) ||
+-	     os_memcmp(data->mesh_required_peer, addr, ETH_ALEN) != 0)) {
+-		wpa_msg(wpa_s, MSG_INFO, "will not initiate new peer link with "
+-			MACSTR " because of no_auto_peer", MAC2STR(addr));
++	/* check if peer accepts new connection. Don't initiate link if peer is full*/
++	if ((ssid && ssid->no_auto_peer &&
++	     (is_zero_ether_addr(data->mesh_required_peer) ||
++	      os_memcmp(data->mesh_required_peer, addr, ETH_ALEN) != 0)) ||
++	    !(mesh_conf_ie->capab & WLAN_MESHCONF_CAPAB_ACCEPT_PLINKS)) {
++		wpa_msg(wpa_s, MSG_ERROR, "will not initiate new peer link with "
++			MACSTR " either no_auto_peer or peer does not allow new links", MAC2STR(addr));
+ 		if (data->mesh_pending_auth) {
+ 			struct os_reltime age;
+ 			const struct ieee80211_mgmt *mgmt;
+-- 
+1.9.1
+

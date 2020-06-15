@@ -1,0 +1,62 @@
+From 6985b3c53bb7fe25caa5eaebf14ccffa73145360 Mon Sep 17 00:00:00 2001
+From: Maital Hahn <maitalm@ti.com>
+Date: Thu, 31 Dec 2015 14:15:56 +0200
+Subject: [PATCH 24/47] mesh: enable disassoc_low_ack event for mesh
+
+Enable to configure and use disassoc_low_ack event for mesh interface.
+When receiving this event, there is no need to wait for any response
+from the peer, just to simply remove it.
+
+fixes #WILINK8_SW_DEV-405
+
+Signed-off-by: Maital Hahn <maitalm@ti.com>
+---
+ src/ap/sta_info.c       | 4 ++--
+ wpa_supplicant/events.c | 3 +++
+ wpa_supplicant/mesh.c   | 1 +
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/ap/sta_info.c b/src/ap/sta_info.c
+index 51d7884..97d1d25 100644
+--- a/src/ap/sta_info.c
++++ b/src/ap/sta_info.c
+@@ -829,8 +829,8 @@ void ap_sta_disassociate(struct hostapd_data *hapd, struct sta_info *sta,
+ 	sta->disassoc_reason = reason;
+ 	sta->flags |= WLAN_STA_PENDING_DISASSOC_CB;
+ 	eloop_cancel_timeout(ap_sta_disassoc_cb_timeout, hapd, sta);
+-	eloop_register_timeout(hapd->iface->drv_flags &
+-			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
++	eloop_register_timeout((!(hapd->conf->mesh & MESH_ENABLED) &&
++					(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS)) ? 2 : 0, 0,
+ 			       ap_sta_disassoc_cb_timeout, hapd, sta);
+ }
+ 
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 87dad08..34630ae 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -4820,6 +4820,9 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
+ 		if (wpa_s->ap_iface && data)
+ 			hostapd_event_sta_low_ack(wpa_s->ap_iface->bss[0],
+ 						  data->low_ack.addr);
++		if (wpa_s->ifmsh && data)
++			hostapd_event_sta_low_ack(wpa_s->ifmsh->bss[0],
++						  data->low_ack.addr);
+ #endif /* CONFIG_AP */
+ #ifdef CONFIG_TDLS
+ 		if (data)
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 7354c1b..2d02d7d 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -298,6 +298,7 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 	bss->conf->start_disabled = 1;
+ 	bss->conf->mesh = MESH_ENABLED;
+ 	bss->conf->ap_max_inactivity = wpa_s->conf->mesh_max_inactivity;
++    bss->conf->disassoc_low_ack = wpa_s->conf->disassoc_low_ack;
+ 
+ 	if (ieee80211_is_dfs(ssid->frequency, wpa_s->hw.modes,
+ 			     wpa_s->hw.num_modes) && wpa_s->conf->country[0]) {
+-- 
+1.9.1
+

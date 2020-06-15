@@ -1,0 +1,30 @@
+From 1ba3b256363fdda9f0fb8a2d8617ad076e472515 Mon Sep 17 00:00:00 2001
+From: Guy Mishol <guym@ti.com>
+Date: Wed, 17 Jun 2015 10:33:09 +0300
+Subject: [PATCH 18/47] P2P: increase p2p go initial connection timeout
+ [WORKAROUND]
+
+increase the P2P_MAX_INITIAL_CONN_WAIT_GO timeout
+to avoid IOP issues with several P2P CL vendors.
+
+Signed-off-by: Guy Mishol <guym@ti.com>
+---
+ wpa_supplicant/p2p_supplicant.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/wpa_supplicant/p2p_supplicant.c b/wpa_supplicant/p2p_supplicant.c
+index 512087f..c14d67f 100755
+--- a/wpa_supplicant/p2p_supplicant.c
++++ b/wpa_supplicant/p2p_supplicant.c
+@@ -84,7 +84,7 @@
+  * operation is considered to be in progress (e.g., to delay other scans) after
+  * WPS provisioning has been completed on the GO during group formation.
+  */
+-#define P2P_MAX_INITIAL_CONN_WAIT_GO 10
++#define P2P_MAX_INITIAL_CONN_WAIT_GO 15
+ #endif /* P2P_MAX_INITIAL_CONN_WAIT_GO */
+ 
+ #ifndef P2P_MAX_INITIAL_CONN_WAIT_GO_REINVOKE
+-- 
+1.9.1
+

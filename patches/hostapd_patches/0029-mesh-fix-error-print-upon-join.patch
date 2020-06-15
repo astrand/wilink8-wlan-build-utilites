@@ -1,0 +1,31 @@
+From 53b89920245103739dfd28991753911b605ab06d Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Mon, 21 Mar 2016 11:16:33 +0200
+Subject: [PATCH 29/47] mesh: fix error print upon join
+
+Sending flush command to driver when iftype is STA
+results in error code sent back to hostap and error print
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ src/drivers/driver_nl80211.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index e5ba68f..e58ee63 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -6281,6 +6281,10 @@ static int i802_flush(void *priv)
+ 	wpa_printf(MSG_DEBUG, "nl80211: flush -> DEL_STATION %s (all)",
+ 		   bss->ifname);
+ 
++	if (!is_ap_interface(bss->drv->nlmode) &&
++	    !is_mesh_interface(bss->drv->nlmode))
++		return 0;
++
+ 	/*
+ 	 * XXX: FIX! this needs to flush all VLANs too
+ 	 */
+-- 
+1.9.1
+

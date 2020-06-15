@@ -1,0 +1,27 @@
+From eec2f3c141752c236fcbd58c08bec0dfbac18519 Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Mon, 15 Sep 2014 15:06:31 +0300
+Subject: [PATCH 19/47] wpa_supplicant: declare 20/40 coex support [UPSTREAM]
+
+Set the appropriate bit in the extended capabilities IE
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ wpa_supplicant/wpa_supplicant.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index 911d79d..a7307b8 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1701,6 +1701,7 @@ static void wpas_ext_capab_byte(struct wpa_supplicant *wpa_s, u8 *pos, int idx)
+ 
+ 	switch (idx) {
+ 	case 0: /* Bits 0-7 */
++		*pos |= 0x01; /* Bit 0 - 20/40 Coex */
+ 		break;
+ 	case 1: /* Bits 8-15 */
+ 		if (wpa_s->conf->coloc_intf_reporting) {
+-- 
+1.9.1
+
