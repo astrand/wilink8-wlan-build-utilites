@@ -1,0 +1,53 @@
+From 87b771c7f5acd25e92d0b3d8a1809f01de123e9f Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Thu, 31 Mar 2016 13:57:02 +0200
+Subject: [PATCH 33/47] Mesh: Cannot create mesh network on channel 40
+
+In case of siso40 off-channel (switching primary
+and secondary channels), sending action frame done
+on wrong freq causing ROC command to FW and
+kernel warning.
+Send the correct freq along with action frame.
+
+Fixes: WILINK8_SW_DEV-449
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ wpa_supplicant/mesh.c     | 6 ++++++
+ wpa_supplicant/mesh_mpm.c | 2 +-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 2f339b7..8878138 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -585,7 +585,13 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
+ 		goto out;
+ 	}
+ 
++    /*In case freq was changed (by ibss_mesh_setup_freq),
++	update the freq in ifmesh*/
++    if (wpa_s->ifmsh->freq != params->freq.freq)
++    	wpa_s->ifmsh->freq = params->freq.freq;
++
+ 	ret = wpas_mesh_complete(wpa_s);
++
+ out:
+ 	return ret;
+ }
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index 16acc04..a774d8d 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -414,7 +414,7 @@ static void mesh_mpm_send_plink_action(struct wpa_supplicant *wpa_s,
+ 	wpa_msg(wpa_s, MSG_DEBUG, "Mesh MPM: Sending peering frame type %d to "
+ 		MACSTR " (my_lid=0x%x peer_lid=0x%x)",
+ 		type, MAC2STR(sta->addr), sta->my_lid, sta->peer_lid);
+-	ret = wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0,
++        ret = wpa_drv_send_action(wpa_s, wpa_s->ifmsh->freq, 0,
+ 				  sta->addr, wpa_s->own_addr, wpa_s->own_addr,
+ 				  wpabuf_head(buf), wpabuf_len(buf), 0);
+ 	if (ret < 0)
+-- 
+1.9.1
+

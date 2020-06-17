@@ -1,0 +1,230 @@
+From e471ede0700591b8b2db978951282e976e7ac38d Mon Sep 17 00:00:00 2001
+From: Chen Loewy <c-loewy@ti.com>
+Date: Thu, 18 Feb 2016 14:35:16 +0200
+Subject: [PATCH 30/47] Mesh: bug fix - make sure when we disconnect we wait
+ for plink_close to be received
+
+When leaving mesh we are not waiting for the other side to respond to our
+close command and tear down the interface.
+This fix waits for 300ms and only then tears down the interface leaving
+enough time for the other side to receive our close action and send us
+a close action back.
+
+note - there is still an issue with mesh_join - when calling mesh join
+we first tear down the last mesh - in that case we won't wait - and this
+bug still occurs - needs to be fixed later on.
+
+Signed-off-by: Chen Loewy <c-loewy@ti.com>
+---
+ src/ap/hostapd.h                |  1 +
+ wpa_supplicant/mesh.c           | 14 +++++++++++++-
+ wpa_supplicant/mesh_mpm.c       | 38 +++++++++++++++++++++++++++++++++-----
+ wpa_supplicant/mesh_mpm.h       |  6 +++++-
+ wpa_supplicant/wpa_supplicant.c | 13 ++++++-------
+ 5 files changed, 58 insertions(+), 14 deletions(-)
+
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index 518c7f1..084ad3a 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -433,6 +433,7 @@ struct hostapd_iface {
+ 
+ #ifdef CONFIG_MESH
+ 	struct mesh_conf *mconf;
++	Boolean  mesh_deinit_process;
+ #endif /* CONFIG_MESH */
+ 
+ 	size_t num_bss;
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index fb72ed8..8b16ef2 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -48,7 +48,8 @@ void wpa_supplicant_mesh_iface_deinit(struct wpa_supplicant *wpa_s,
+ 		return;
+ 
+ 	if (ifmsh->mconf) {
+-		mesh_mpm_deinit(wpa_s, ifmsh);
++		struct hostapd_data *hapd = ifmsh->bss[0];
++		hostapd_free_stas(hapd);
+ 		if (ifmsh->mconf->rsn_ie) {
+ 			ifmsh->mconf->rsn_ie = NULL;
+ 			/* We cannot free this struct
+@@ -265,6 +266,7 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 	if (!ifmsh)
+ 		return -ENOMEM;
+ 
++	ifmsh->mesh_deinit_process = FALSE;
+ 	ifmsh->drv_flags = wpa_s->drv_flags;
+ 	ifmsh->num_bss = 1;
+ 	ifmsh->bss = os_calloc(wpa_s->ifmsh->num_bss,
+@@ -450,6 +452,9 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
+ 		goto out;
+ 	}
+ 
++	if (wpa_s->ifmsh)
++		mesh_mpm_close_links(wpa_s,wpa_s->ifmsh);
++
+ 	wpa_supplicant_mesh_deinit(wpa_s);
+ 
+ 	wpa_s->pairwise_cipher = WPA_CIPHER_NONE;
+@@ -715,3 +720,10 @@ int wpas_mesh_peer_add(struct wpa_supplicant *wpa_s, const u8 *addr,
+ {
+ 	return mesh_mpm_connect_peer(wpa_s, addr, duration);
+ }
++
++
++int wpa_supplicant_leave_mesh_initiate(struct wpa_supplicant *wpa_s)
++{
++	wpa_s->ifmsh->mesh_deinit_process = TRUE;
++	mesh_mpm_close_links(wpa_s,wpa_s->ifmsh);
++}
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index c2c4981..8e1d016 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -463,6 +463,32 @@ static void mesh_mpm_fsm_restart(struct wpa_supplicant *wpa_s,
+ }
+ 
+ 
++static void mesh_close_links_timer(void *eloop_ctx, void *user_data)
++{
++	struct wpa_supplicant *wpa_s = eloop_ctx;
++	struct hostapd_data *hapd = NULL;
++
++	if (wpa_s->ifmsh)
++		hapd = wpa_s->ifmsh->bss[0];
++
++	/*
++	*in case we timed out and not all mesh links were closed appropriately
++	* we now clean all links
++	*/
++
++	if (hapd) {
++		while (hapd->num_plinks > 0) {
++			wpa_msg(wpa_s, MSG_ERROR,"mesh_close_links_timer, num of plinks: %d",hapd->num_plinks );
++
++			hapd->num_plinks--;
++			mesh_mpm_fsm_restart(wpa_s, hapd->sta_list);
++		}
++	}
++
++	if ( (wpa_s->ifmsh) && (wpa_s->ifmsh->mesh_deinit_process) )
++		wpa_supplicant_leave_mesh(wpa_s);
++
++}
+ static void plink_timer(void *eloop_ctx, void *user_data)
+ {
+ 	struct wpa_supplicant *wpa_s = eloop_ctx;
+@@ -530,7 +556,7 @@ mesh_mpm_plink_open(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ }
+ 
+ 
+-static int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
++int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
+ 				void *ctx)
+ {
+ 	struct wpa_supplicant *wpa_s = ctx;
+@@ -538,6 +564,7 @@ static int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
+ 
+ 	if (sta) {
+ 		wpa_mesh_set_plink_state(wpa_s, sta, PLINK_HOLDING);
++		hapd->num_plinks--;
+ 		mesh_mpm_send_plink_action(wpa_s, sta, PLINK_CLOSE, reason);
+ 		wpa_printf(MSG_DEBUG, "MPM closing plink sta=" MACSTR,
+ 			   MAC2STR(sta->addr));
+@@ -628,16 +655,14 @@ int mesh_mpm_connect_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ }
+ 
+ 
+-void mesh_mpm_deinit(struct wpa_supplicant *wpa_s, struct hostapd_iface *ifmsh)
++void mesh_mpm_close_links(struct wpa_supplicant *wpa_s, struct hostapd_iface *ifmsh)
+ {
+ 	struct hostapd_data *hapd = ifmsh->bss[0];
+ 
+ 	/* notify peers we're leaving */
+ 	ap_for_each_sta(hapd, mesh_mpm_plink_close, wpa_s);
+ 
+-	hapd->num_plinks = 0;
+-	hostapd_free_stas(hapd);
+-	eloop_cancel_timeout(peer_add_timer, wpa_s, NULL);
++	eloop_register_timeout(0, MESH_CLOSE_LINKS_RESPONSE_TIMER, mesh_close_links_timer, wpa_s, NULL);
+ }
+ 
+ 
+@@ -807,6 +832,9 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	struct ieee80211_mesh_config *mesh_conf_ie =
+ 		(struct ieee80211_mesh_config *)elems->mesh_config;
+ 
++	if (wpa_s->ifmsh->mesh_deinit_process)
++                return;
++
+ 	/* check if peer accepts new connection. Don't initiate link if peer is full*/
+ 	if ((ssid && ssid->no_auto_peer &&
+ 	     (is_zero_ether_addr(data->mesh_required_peer) ||
+diff --git a/wpa_supplicant/mesh_mpm.h b/wpa_supplicant/mesh_mpm.h
+index 5fc1e61..26111f2 100644
+--- a/wpa_supplicant/mesh_mpm.h
++++ b/wpa_supplicant/mesh_mpm.h
+@@ -12,7 +12,7 @@
+ /* notify MPM of new mesh peer to be inserted in MPM and driver */
+ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 			    struct ieee802_11_elems *elems);
+-void mesh_mpm_deinit(struct wpa_supplicant *wpa_s, struct hostapd_iface *ifmsh);
++void mesh_mpm_close_links(struct wpa_supplicant *wpa_s, struct hostapd_iface *ifmsh);
+ void mesh_mpm_auth_peer(struct wpa_supplicant *wpa_s, const u8 *addr);
+ void mesh_mpm_free_sta(struct hostapd_data *hapd, struct sta_info *sta);
+ void wpa_mesh_set_plink_state(struct wpa_supplicant *wpa_s,
+@@ -21,6 +21,8 @@ void wpa_mesh_set_plink_state(struct wpa_supplicant *wpa_s,
+ int mesh_mpm_close_peer(struct wpa_supplicant *wpa_s, const u8 *addr);
+ int mesh_mpm_connect_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 			  int duration);
++int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
++				void *ctx);
+ 
+ #ifdef CONFIG_MESH
+ 
+@@ -28,6 +30,8 @@ void mesh_mpm_action_rx(struct wpa_supplicant *wpa_s,
+ 			const struct ieee80211_mgmt *mgmt, size_t len);
+ void mesh_mpm_mgmt_rx(struct wpa_supplicant *wpa_s, struct rx_mgmt *rx_mgmt);
+ 
++#define MESH_CLOSE_LINKS_RESPONSE_TIMER	300000 // 300 ms - 300,000usec
++
+ #else /* CONFIG_MESH */
+ 
+ static inline void mesh_mpm_action_rx(struct wpa_supplicant *wpa_s,
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index 4a0edc7..63724a6 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -3484,11 +3484,12 @@ void wpa_supplicant_deauthenticate(struct wpa_supplicant *wpa_s,
+ 		struct mesh_conf *mconf;
+ 
+ 		mconf = wpa_s->ifmsh->mconf;
+-		wpa_msg(wpa_s, MSG_INFO, MESH_GROUP_REMOVED "%s",
+-			wpa_s->ifname);
+ 		wpas_notify_mesh_group_removed(wpa_s, mconf->meshid,
+ 					       mconf->meshid_len, reason_code);
+-		wpa_supplicant_leave_mesh(wpa_s);
++		wpa_msg_ctrl(wpa_s, MSG_INFO, MESH_GROUP_REMOVED "%s",
++			     wpa_s->ifname);
++		wpa_supplicant_leave_mesh_initiate(wpa_s);
++
+ 	}
+ #endif /* CONFIG_MESH */
+ 
+@@ -6050,10 +6051,8 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
+ 	}
+ 
+ #ifdef CONFIG_MESH
+-	if (wpa_s->ifmsh) {
+-		wpa_supplicant_mesh_iface_deinit(wpa_s, wpa_s->ifmsh);
+-		wpa_s->ifmsh = NULL;
+-	}
++	if (wpa_s->ifmsh)
++		wpa_supplicant_leave_mesh(wpa_s);
+ #endif /* CONFIG_MESH */
+ 
+ 	if (wpa_s->conf != NULL) {
+-- 
+1.9.1
+

@@ -1,0 +1,850 @@
+From 53ad60ead07b4ab1c329599795bfede6238ccbec Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Wed, 13 Jul 2016 13:59:09 +0300
+Subject: [PATCH 43/47] Mesh: Support mesh connection to a "full" MP
+
+Support for connection of an "empty" MP to a "full" MP
+if no other MP are available.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ src/ap/hostapd.h                |   3 +
+ src/ap/ieee802_11.c             |  28 +++--
+ src/drivers/driver.h            |   8 ++
+ src/drivers/driver_nl80211.c    |  15 +++
+ src/drivers/nl80211_copy.h      |   3 +
+ wpa_supplicant/config_ssid.h    |   2 +-
+ wpa_supplicant/driver_i.h       |   7 ++
+ wpa_supplicant/events.c         |  51 ++++++--
+ wpa_supplicant/mesh.c           |  25 ++++
+ wpa_supplicant/mesh.h           |   6 +
+ wpa_supplicant/mesh_mpm.c       | 249 +++++++++++++++++++++++++++++++++-------
+ wpa_supplicant/mesh_mpm.h       |   2 +
+ wpa_supplicant/mesh_rsn.c       |   6 +
+ wpa_supplicant/wpa_supplicant.c |  24 ++--
+ 14 files changed, 360 insertions(+), 69 deletions(-)
+ mode change 100644 => 100755 src/ap/hostapd.h
+ mode change 100644 => 100755 src/ap/ieee802_11.c
+ mode change 100644 => 100755 src/drivers/driver.h
+ mode change 100644 => 100755 src/drivers/driver_nl80211.c
+ mode change 100644 => 100755 wpa_supplicant/events.c
+ mode change 100644 => 100755 wpa_supplicant/mesh.c
+ mode change 100644 => 100755 wpa_supplicant/mesh.h
+ mode change 100644 => 100755 wpa_supplicant/mesh_mpm.c
+ mode change 100644 => 100755 wpa_supplicant/mesh_rsn.c
+ mode change 100644 => 100755 wpa_supplicant/wpa_supplicant.c
+
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+old mode 100644
+new mode 100755
+index 084ad3a..0f882d0
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -307,7 +307,10 @@ struct hostapd_data {
+ 	int max_plinks;
+ 	void (*mesh_sta_free_cb)(struct hostapd_data *hapd,
+ 				 struct sta_info *sta);
++	Boolean mesh_switch_connection;
+ 	struct wpabuf *mesh_pending_auth;
++	struct wpabuf *mesh_pending_action;
++	u8 mesh_beacon_pending_peer[ETH_ALEN];
+ 	struct os_reltime mesh_pending_auth_time;
+ 	u8 mesh_required_peer[ETH_ALEN];
+ #endif /* CONFIG_MESH */
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+old mode 100644
+new mode 100755
+index a6b7d62..679be56
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -2257,19 +2257,25 @@ static void handle_auth(struct hostapd_data *hapd,
+ #endif /* CONFIG_MESH */
+ 	} else {
+ #ifdef CONFIG_MESH
+-		if (hapd->conf->mesh & MESH_ENABLED) {
++
++                if (hapd->conf->mesh & MESH_ENABLED) {
+ 			/* if the mesh peer is not available, we don't do auth.
+ 			 */
+-			wpa_printf(MSG_DEBUG, "Mesh peer " MACSTR
+-				   " not yet known - drop Authentication frame",
+-				   MAC2STR(mgmt->sa));
+-			/*
+-			 * Save a copy of the frame so that it can be processed
+-			 * if a new peer entry is added shortly after this.
+-			 */
+-			wpabuf_free(hapd->mesh_pending_auth);
+-			hapd->mesh_pending_auth = wpabuf_alloc_copy(mgmt, len);
+-			os_get_reltime(&hapd->mesh_pending_auth_time);
++			if (!hapd->mesh_switch_connection) {
++                                /* During switch connection ignore any
++				 * auth frame.
++                                 */
++				wpa_printf(MSG_DEBUG, "Mesh peer " MACSTR
++					   " not yet known - SAVE Authentication frame",
++					   MAC2STR(mgmt->sa));
++				/*
++				 * Save a copy of the frame so that it can be processed
++				 * if a new peer entry is added shortly after this.
++				 */
++				wpabuf_free(hapd->mesh_pending_auth);
++				hapd->mesh_pending_auth = wpabuf_alloc_copy(mgmt, len);
++				os_get_reltime(&hapd->mesh_pending_auth_time);
++			}
+ 			return;
+ 		}
+ #endif /* CONFIG_MESH */
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+old mode 100644
+new mode 100755
+index 7d90b5a..fed0ed5
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -4043,6 +4043,14 @@ struct wpa_driver_ops {
+ 	 */
+ 	int (*leave_mesh)(void *priv);
+ 
++        /**
++         *  get_worst_mesh - get lowest signal mesh peer link
++         *  : Private driver interface data
++         *  : mac of the lowest mesh peer link
++         *  Returns 0 on success, -1 on failure
++         */
++	int (*get_worst_mesh)(void *priv, u8 *macaddr);
++
+ 	/**
+ 	 * probe_mesh_link - Inject a frame over direct mesh link to a given
+ 	 *	peer skipping the next_hop lookup from mpath table.
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+old mode 100644
+new mode 100755
+index e58ee63..9224dc2
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -10936,6 +10936,20 @@ static int nl80211_configure_data_frame_filters(void *priv, u32 filter_flags)
+ 	return 0;
+ }
+ 
++static int nl80211_get_low_signal_mesh(void *priv, u8 *macaddr)
++{
++	struct i802_bss *bss = priv;
++	struct wpa_driver_nl80211_data *drv = bss->drv;
++	struct nl_msg *msg;
++	struct wiphy_idx_data info = {
++		.macaddr = macaddr,
++	};
++
++        msg = nl80211_drv_msg(drv, 0, NL80211_CMD_GET_LOW_SIGNAL_MESH);
++	os_memset(macaddr, 0, ETH_ALEN);
++
++	return send_and_recv_msgs(drv, msg, netdev_info_handler, &info);
++}
+ 
+ static int nl80211_get_ext_capab(void *priv, enum wpa_driver_if_type type,
+ 				 const u8 **ext_capa, const u8 **ext_capa_mask,
+@@ -11211,6 +11225,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
+ 	.join_mesh = wpa_driver_nl80211_join_mesh,
+ 	.leave_mesh = wpa_driver_nl80211_leave_mesh,
+ 	.probe_mesh_link = nl80211_probe_mesh_link,
++	.get_worst_mesh = nl80211_get_low_signal_mesh,
+ #endif /* CONFIG_MESH */
+ 	.br_add_ip_neigh = wpa_driver_br_add_ip_neigh,
+ 	.br_delete_ip_neigh = wpa_driver_br_delete_ip_neigh,
+diff --git a/src/drivers/nl80211_copy.h b/src/drivers/nl80211_copy.h
+index 6f09d15..1aec5da 100644
+--- a/src/drivers/nl80211_copy.h
++++ b/src/drivers/nl80211_copy.h
+@@ -1309,6 +1309,9 @@ enum nl80211_commands {
+ 
+ 	NL80211_CMD_PROBE_MESH_LINK,
+ 
++
++	NL80211_CMD_GET_LOW_SIGNAL_MESH,
++
+ 	/* add new commands above here */
+ 
+ 	/* used to define NL80211_CMD_MAX below */
+diff --git a/wpa_supplicant/config_ssid.h b/wpa_supplicant/config_ssid.h
+index d5c5c00..4f472cb 100644
+--- a/wpa_supplicant/config_ssid.h
++++ b/wpa_supplicant/config_ssid.h
+@@ -25,7 +25,7 @@
+ 
+ #define DEFAULT_BG_SCAN_PERIOD -1
+ #define DEFAULT_MESH_MAX_RETRIES 2
+-#define DEFAULT_MESH_RETRY_TIMEOUT 40
++#define DEFAULT_MESH_RETRY_TIMEOUT 100
+ #define DEFAULT_MESH_CONFIRM_TIMEOUT 40
+ #define DEFAULT_MESH_HOLDING_TIMEOUT 40
+ #define DEFAULT_MESH_RSSI_THRESHOLD 1 /* no change */
+diff --git a/wpa_supplicant/driver_i.h b/wpa_supplicant/driver_i.h
+index 656ccb1..60bf6e5 100644
+--- a/wpa_supplicant/driver_i.h
++++ b/wpa_supplicant/driver_i.h
+@@ -97,6 +97,13 @@ static inline int wpa_drv_mesh_link_probe(struct wpa_supplicant *wpa_s,
+ 	return -1;
+ }
+ 
++static inline int wpa_drv_get_worst_mesh_point(struct wpa_supplicant *wpa_s, u8 *macaddr)
++{
++	if (wpa_s->driver->get_worst_mesh)
++		return wpa_s->driver->get_worst_mesh(wpa_s->drv_priv, macaddr);
++	return -1;
++}
++
+ static inline int wpa_drv_scan(struct wpa_supplicant *wpa_s,
+ 			       struct wpa_driver_scan_params *params)
+ {
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+old mode 100644
+new mode 100755
+index ed5d34f..22fdca6
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -1223,9 +1223,7 @@ struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
+ 
+ 		if (ssid->mode != WPAS_MODE_MESH && !bss_is_ess(bss) &&
+ 		    !bss_is_pbss(bss)) {
+-			if (debug_print)
+-				wpa_dbg(wpa_s, MSG_DEBUG,
+-					"   skip - not ESS, PBSS, or MBSS");
++			wpa_dbg(wpa_s, MSG_DEBUG, "   skip - neither ESS nor PBSS network");
+ 			continue;
+ 		}
+ 
+@@ -1389,6 +1387,8 @@ wpa_supplicant_select_bss(struct wpa_supplicant *wpa_s,
+ 			  int only_first_ssid)
+ {
+ 	unsigned int i;
++	struct wpa_ssid *temp_selected_ssid = NULL;
++	struct wpa_bss *temp_bss = NULL;
+ 
+ 	if (wpa_s->current_ssid) {
+ 		struct wpa_ssid *ssid;
+@@ -1425,6 +1425,27 @@ wpa_supplicant_select_bss(struct wpa_supplicant *wpa_s,
+ 		wpa_s->owe_transition_select = 0;
+ 		if (!*selected_ssid)
+ 			continue;
++#ifdef CONFIG_MESH
++                /*if this is mesh - need to make sure selected is accapting new connections*/
++		if (wpa_s->ifmsh) {
++			const u8 *mesh_ie = wpa_bss_get_ie(bss, WLAN_EID_MESH_CONFIG);
++			if (!mesh_ie) {
++                                *selected_ssid = NULL;
++				continue;
++			}
++			if (!(mesh_ie[8] & 0x1)) {
++				/* Mesh not accapting new connections - save it for later*/
++				wpa_dbg(wpa_s, MSG_DEBUG, "Skip selected for now - MP not accapting new links");
++				if (!temp_selected_ssid) {
++					temp_selected_ssid = *selected_ssid;
++					temp_bss = bss;
++				}
++				*selected_ssid = NULL;
++                                continue;
++			}
++		}
++#endif /*CONFIG_MESH*/
++
+ 		wpa_dbg(wpa_s, MSG_DEBUG, "   selected BSS " MACSTR
+ 			" ssid='%s'",
+ 			MAC2STR(bss->bssid),
+@@ -1432,6 +1453,16 @@ wpa_supplicant_select_bss(struct wpa_supplicant *wpa_s,
+ 		return bss;
+ 	}
+ 
++	if (temp_selected_ssid) {
++		/* No "accapting" mesh peers - select best "not-accapting"*/
++		*selected_ssid = temp_selected_ssid;
++		wpa_dbg(wpa_s, MSG_DEBUG, "   selected BSS " MACSTR
++			" ssid='%s'",
++			MAC2STR(temp_bss->bssid),
++			wpa_ssid_txt(temp_bss->ssid, temp_bss->ssid_len));
++		return temp_bss;
++	}
++
+ 	return NULL;
+ }
+ 
+@@ -2040,11 +2071,11 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 		return 1;
+ 	} else {
+ #ifdef CONFIG_MESH
+-		// in case we are running mesh on demand and didn't find our AP we should unblock mesh connections now
+-		if (wpa_s->global->mesh_on_demand.enabled)
+-		{
+-			if (wpa_s != wpa_s->global->mesh_on_demand.mesh_wpa_s)
+-			{
++		/* in case we are running mesh on demand and didn't find our AP
++		 * we should unblock mesh connections now
++		 */
++		if (wpa_s->global->mesh_on_demand.enabled) {
++			if (wpa_s != wpa_s->global->mesh_on_demand.mesh_wpa_s) {
+ 				wpa_s->global->mesh_on_demand.meshBlocked = FALSE;
+ 				wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ********************* MESH IS UNBLOCKED");
+ 			}
+@@ -2053,6 +2084,10 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 		if (wpa_s->ifmsh) {
+ 			wpa_msg(wpa_s, MSG_DEBUG,
+ 				"Avoiding join because we already joined a mesh group");
++
++			/* Schedule delayed scan for the mesh interface*/
++			wpa_supplicant_mesh_delayed_scan(wpa_s,
++							 MESH_CONNECT_SCAN_PERIOD, 0);
+ 			return 0;
+ 		}
+ #endif /* CONFIG_MESH */
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+old mode 100644
+new mode 100755
+index 3dc25b4..b328059
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -25,9 +25,13 @@
+ #include "mesh_mpm.h"
+ #include "mesh_rsn.h"
+ #include "mesh.h"
++#include "scan.h"
+ #include "../src/drivers/driver_nl80211.h"
+ 
+ 
++/* Time for initial mesh connection after join*/
++#define INIT_MESH_CONNECTION_TIME 3
++
+ static void wpa_supplicant_mesh_deinit(struct wpa_supplicant *wpa_s)
+ {
+ 	wpa_supplicant_mesh_iface_deinit(wpa_s, wpa_s->ifmsh);
+@@ -41,6 +45,24 @@ static void wpa_supplicant_mesh_deinit(struct wpa_supplicant *wpa_s)
+ 	 * anyway, so it's not urgent */
+ }
+ 
++static void mesh_delayed_scan_timeout(void *eloop_ctx, void *timeout_ctx)
++{
++	struct wpa_supplicant *wpa_s = eloop_ctx;
++	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
++
++        /* Mesh will only scan if it currently has no links*/
++	if (hapd->num_plinks == 0) {
++                wpa_supplicant_req_scan(wpa_s, 0, 0);
++	}
++}
++
++void wpa_supplicant_mesh_delayed_scan(struct wpa_supplicant *wpa_s,
++				     int sec, int usec)
++{
++	eloop_register_timeout(sec, usec,
++			       mesh_delayed_scan_timeout,
++			       wpa_s, NULL);
++}
+ 
+ void wpa_supplicant_mesh_iface_deinit(struct wpa_supplicant *wpa_s,
+ 				      struct hostapd_iface *ifmsh)
+@@ -594,6 +616,9 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
+ 
+ 	wpa_supplicant_set_state(wpa_s, WPA_COMPLETED);
+ 
++        /* Schedule delayed scan for the mesh interface */
++        wpa_supplicant_mesh_delayed_scan(wpa_s, INIT_MESH_CONNECTION_TIME, 0);
++
+ out:
+ 	return ret;
+ }
+diff --git a/wpa_supplicant/mesh.h b/wpa_supplicant/mesh.h
+old mode 100644
+new mode 100755
+index 36128c9..2ee36d7
+--- a/wpa_supplicant/mesh.h
++++ b/wpa_supplicant/mesh.h
+@@ -9,9 +9,13 @@
+ #ifndef MESH_H
+ #define MESH_H
+ 
++#define MESH_CONNECT_SCAN_PERIOD 30
++
+ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
+ 			     struct wpa_ssid *ssid);
+ int wpa_supplicant_leave_mesh(struct wpa_supplicant *wpa_s);
++void wpa_supplicant_mesh_delayed_scan(struct wpa_supplicant *wpa_s,
++				     int sec, int usec);
+ void wpa_supplicant_mesh_iface_deinit(struct wpa_supplicant *wpa_s,
+ 				      struct hostapd_iface *ifmsh);
+ int wpas_mesh_scan_result_text(const u8 *ies, size_t ies_len, char *buf,
+@@ -24,6 +28,8 @@ int wpas_mesh_peer_add(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 
+ void wpa_supplicant_leave_mesh_initiate(struct wpa_supplicant *wpa_s);
+ 
++extern void wpa_mesh_connect(struct wpa_supplicant *wpa_s, const u8 *addr,
++              u8 *ies, size_t ie_len);
+ #ifdef CONFIG_MESH
+ 
+ void wpa_mesh_notify_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+old mode 100644
+new mode 100755
+index c67141a..b4f5074
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -27,6 +27,10 @@
+ #include "config.h"
+ #include "../src/drivers/driver_nl80211.h"
+ 
++
++#define SWITCH_CONN_TIMEOUT 2
++#define EXTENDED_RETRY_TIMEOUT 200
++
+ struct mesh_peer_mgmt_ie {
+ 	const u8 *proto_id; /* Mesh Peering Protocol Identifier (2 octets) */
+ 	const u8 *llid; /* Local Link ID (2 octets) */
+@@ -428,6 +432,66 @@ fail:
+ }
+ 
+ 
++static void start_mesh_switch_connection(struct wpa_supplicant *wpa_s,
++					 const struct ieee80211_mgmt *mgmt,
++					 size_t len)
++{
++	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
++	u8 macaddr[ETH_ALEN] = {0};
++
++        /* Already switching*/
++	if (hapd->mesh_switch_connection)
++		return;
++
++        /* Links state unstable (during connect/disconnect)*/
++	if (hapd->num_plinks < hapd->num_sta)
++		return;
++
++	wpa_msg(wpa_s, MSG_DEBUG, "Starting switch connection process");
++
++        /* Mark beginning of the switch connection */
++	hapd->mesh_switch_connection = TRUE;
++	os_memset(hapd->mesh_beacon_pending_peer, 0, ETH_ALEN);
++
++        /* Save pending action if needed*/
++	if (mgmt)
++		hapd->mesh_pending_action = wpabuf_alloc_copy(mgmt, len);
++
++        /* Find a candidate for disconnect*/
++	if (wpa_drv_get_worst_mesh_point(wpa_s, macaddr)) {
++                wpa_msg(wpa_s, MSG_DEBUG, "Cannot find a candidate for disconnect");
++		goto fail;
++	}
++
++        /* Found a candidate - disconnect it. Upon completing disconnection,
++	new connection will be triggered */
++        if (!mesh_mpm_close_peer(wpa_s, macaddr))
++		return;
++
++fail:
++	/* Mark ending of switch connection process*/
++	hapd->mesh_switch_connection = FALSE;
++
++        /* Release pending*/
++	wpabuf_free(hapd->mesh_pending_action);
++	hapd->mesh_pending_action = NULL;
++}
++
++static void switch_connection_timer(void *eloop_ctx, void *user_data)
++{
++	struct wpa_supplicant *wpa_s = eloop_ctx;
++        struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
++
++        /* Didn't receive the required beacon,
++	 * cancel the process
++	 */
++	hapd->mesh_switch_connection = FALSE;
++	wpabuf_free(hapd->mesh_pending_auth);
++	hapd->mesh_pending_auth = NULL;
++	os_memset(hapd->mesh_beacon_pending_peer, 0, ETH_ALEN);
++}
++
++
+ /* configure peering state in ours and driver's station entry */
+ void wpa_mesh_set_plink_state(struct wpa_supplicant *wpa_s,
+ 			      struct sta_info *sta,
+@@ -582,19 +646,42 @@ static void plink_timer(void *eloop_ctx, void *user_data)
+ 		break;
+ 	case PLINK_HOLDING:
+ 		/* holding timer */
+-
+-		if (sta->mesh_sae_pmksa_caching) {
+-			wpa_printf(MSG_DEBUG, "MPM: Peer " MACSTR
++                if (sta->mesh_sae_pmksa_caching ||
++		    hapd->mesh_switch_connection) {
++                        wpa_printf(MSG_DEBUG, "MPM: Peer " MACSTR
+ 				   " looks like it does not support mesh SAE PMKSA caching, so remove the cached entry for it",
+ 				   MAC2STR(sta->addr));
+ 			wpa_auth_pmksa_remove(hapd->wpa_auth, sta->addr);
+ 		}
++
+ 		mesh_mpm_fsm_restart(wpa_s, sta);
+ 
+ 		if (wpa_s->global->mesh_on_demand.enabled &&
+ 		    hapd && (hapd->num_plinks == 0)) {
+ 			wpa_s->global->mesh_on_demand.anyMeshConnected = FALSE;
+ 		}
++
++                /* If this is switch connection process - trigger new connection*/
++		if (hapd->mesh_switch_connection) {
++                        if (hapd->mesh_pending_action) {
++				/* open connection*/
++				hapd->mesh_switch_connection = FALSE;
++                                mesh_mpm_action_rx(wpa_s,
++						   wpabuf_head(hapd->mesh_pending_action),
++						   wpabuf_len(hapd->mesh_pending_action));
++				hapd->mesh_pending_action = NULL;
++                        } else if (hapd->mesh_pending_auth) {
++				/* secured connection*/
++				const struct ieee80211_mgmt *mgmt =
++					wpabuf_head(hapd->mesh_pending_auth);
++                                /* Save the mac addr of the pending peer */
++				os_memcpy(hapd->mesh_beacon_pending_peer, mgmt->sa, ETH_ALEN);
++                                /* Start timer on the switch connection process*/
++				eloop_register_timeout(SWITCH_CONN_TIMEOUT, 0,
++						       switch_connection_timer,
++						       wpa_s, NULL);
++			}
++		}
+                 break;
+ 	default:
+ 		break;
+@@ -604,13 +691,11 @@ static void plink_timer(void *eloop_ctx, void *user_data)
+ 
+ /* initiate peering with station */
+ static void mesh_mpm_plink_open(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+-		    enum mesh_plink_state next_state)
++		    enum mesh_plink_state next_state, int retry_timeout)
+ {
+-	struct mesh_conf *conf = wpa_s->ifmsh->mconf;
+-
+ 	eloop_cancel_timeout(plink_timer, wpa_s, sta);
+-	eloop_register_timeout(conf->dot11MeshRetryTimeout / 1000,
+-			       (conf->dot11MeshRetryTimeout % 1000) * 1000,
++	eloop_register_timeout(retry_timeout / 1000,
++			       (retry_timeout % 1000) * 1000,
+ 			       plink_timer, wpa_s, sta);
+ 	mesh_mpm_send_plink_action(wpa_s, sta, PLINK_OPEN, 0);
+ 	wpa_mesh_set_plink_state(wpa_s, sta, next_state);
+@@ -712,7 +797,7 @@ int mesh_mpm_connect_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	}
+ 
+ 	if (conf->security == MESH_CONF_SEC_NONE) {
+-		mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT);
++		mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT, conf->dot11MeshRetryTimeout);
+ 	} else {
+ 		mesh_rsn_auth_sae_sta(wpa_s, sta);
+ 		os_memcpy(hapd->mesh_required_peer, addr, ETH_ALEN);
+@@ -785,7 +870,8 @@ void mesh_mpm_auth_peer(struct wpa_supplicant *wpa_s, const u8 *addr)
+ 	if (!sta->my_lid)
+ 		mesh_mpm_init_link(wpa_s, sta);
+ 
+-	mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT);
++	mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT,
++			    wpa_s->ifmsh->mconf->dot11MeshRetryTimeout);
+ }
+ 
+ /*
+@@ -807,20 +893,9 @@ static struct sta_info * mesh_mpm_add_peer(struct wpa_supplicant *wpa_s,
+ #endif /* CONFIG_IEEE80211N */
+ 	int ret;
+ 
+-	if (elems->mesh_config_len >= 7 &&
+-	    !(elems->mesh_config[6] & MESH_CAP_ACCEPT_ADDITIONAL_PEER)) {
+-		wpa_msg(wpa_s, MSG_DEBUG,
+-			"mesh: Ignore a crowded peer " MACSTR,
+-			MAC2STR(addr));
++    sta = ap_sta_add(data, addr);
++	if (!sta)
+ 		return NULL;
+-	}
+-
+-	sta = ap_get_sta(data, addr);
+-	if (!sta) {
+-		sta = ap_sta_add(data, addr);
+-		if (!sta)
+-			return NULL;
+-	}
+ 
+ 	/* Set WMM by default since Mesh STAs are QoS STAs */
+ 	sta->flags |= WLAN_STA_WMM;
+@@ -915,9 +990,23 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	struct os_reltime age;
+ 	struct hostapd_frame_info fi;
+ 
+-
+ 	if (wpa_s->ifmsh->mesh_deinit_process)
+-                return;
++		return;
++
++        /* in switch connection process we might be waiting for a beacon from
++	 * a specific peer to trigger connection and complete the process.
++	 * Otherwise, drop all beacons.
++	 */
++	if (data->mesh_switch_connection) {
++                if (os_memcmp(data->mesh_beacon_pending_peer, addr, ETH_ALEN) != 0)
++			return;
++
++		eloop_cancel_timeout(switch_connection_timer, wpa_s, NULL);
++		wpabuf_free(data->mesh_pending_auth);
++		data->mesh_pending_auth = NULL;
++		os_memset(data->mesh_beacon_pending_peer, 0, ETH_ALEN);
++		data->mesh_switch_connection = FALSE;
++	}
+ 
+ 	if ((wpa_s->global->mesh_on_demand.enabled) && (wpa_s->global->mesh_on_demand.meshBlocked)) {
+ 		if (!data->mesh_pending_auth)
+@@ -932,18 +1021,21 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 		mgmt = wpabuf_head(data->mesh_pending_auth);
+ 		os_reltime_age(&data->mesh_pending_auth_time, &age);
+ 		if (age.sec < 2 && os_memcmp(mgmt->sa, addr, ETH_ALEN) == 0) {
+-			data->mesh_pending_auth = FALSE;
++			wpabuf_free(data->mesh_pending_auth);
++			data->mesh_pending_auth = NULL;
+ 		} else
+ 			return;
+ 	}
+ 
+ 	/* check if peer accepts new connection. Don't initiate link if peer is full*/
+-	if ((ssid && ssid->no_auto_peer &&
+-             (is_zero_ether_addr(data->mesh_required_peer) ||
+-              os_memcmp(data->mesh_required_peer, addr, ETH_ALEN) != 0)) ||
+-            !(mesh_conf_ie->capab & WLAN_MESHCONF_CAPAB_ACCEPT_PLINKS)) {
++	if (!(mesh_conf_ie->capab & WLAN_MESHCONF_CAPAB_ACCEPT_PLINKS))
++		return;
++
++	if (ssid && ssid->no_auto_peer &&
++	    (is_zero_ether_addr(data->mesh_required_peer) ||
++	     os_memcmp(data->mesh_required_peer, addr, ETH_ALEN) != 0)) {
+                wpa_msg(wpa_s, MSG_ERROR, "will not initiate new peer link with "
+-                       MACSTR " either no_auto_peer or peer does not allow new links", MAC2STR(addr));
++		       MACSTR " no_auto_peer", MAC2STR(addr));
+ 
+ 		if (data->mesh_pending_auth) {
+ 			mgmt = wpabuf_head(data->mesh_pending_auth);
+@@ -972,24 +1064,67 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 			return;
+ 		}
+ 
++		return;
++	}
++
++        sta = mesh_mpm_add_peer(wpa_s, addr, elems);
++        if (!sta) {
++		if (!data->mesh_pending_auth)
++			return;
++
++                /* If we are full, we need to check if we have a pending auth.
++		 * if so, we would like to try and switch connections to help
++		 * the requesting MP.
++		 */
++                mgmt = wpabuf_head(data->mesh_pending_auth);
++		os_reltime_age(&data->mesh_pending_auth_time, &age);
++		if (age.sec < 2 && os_memcmp(mgmt->sa, addr, ETH_ALEN) == 0) {
++			/* If peer has other links - ignore the pending auth */
++			if (elems->mesh_config_len && ((elems->mesh_config[5]>>1) & 0x3F))
++				return;
++			/*Peer has no other links - lets try to help*/
++			start_mesh_switch_connection(wpa_s, NULL, 0);
++		}
++
++		return;
++	}
++
++	if (conf->security == MESH_CONF_SEC_NONE) {
++		if (sta->plink_state < PLINK_OPN_SNT ||
++		    sta->plink_state > PLINK_ESTAB)
++			mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT, conf->dot11MeshRetryTimeout);
++	} else {
++		mesh_rsn_auth_sae_sta(wpa_s, sta);
++	}
++}
++
++void wpa_mesh_connect(struct wpa_supplicant *wpa_s, const u8 *addr,
++		      u8 *ies, size_t ie_len)
++{
++	struct mesh_conf *conf = wpa_s->ifmsh->mconf;
++	struct ieee802_11_elems elems;
++	struct sta_info *sta;
+ 
++        if (ieee802_11_parse_elems(ies, ie_len, &elems, 0) == ParseFailed) {
++		wpa_msg(wpa_s, MSG_INFO, "Could not parse beacon from " MACSTR,
++			MAC2STR(addr));
+ 		return;
+ 	}
+ 
+-	sta = mesh_mpm_add_peer(wpa_s, addr, elems);
++        sta = mesh_mpm_add_peer(wpa_s, addr, &elems);
+         if (!sta)
+                 return;
+ 
+ 	if (conf->security == MESH_CONF_SEC_NONE) {
+ 		if (sta->plink_state < PLINK_OPN_SNT ||
+ 		    sta->plink_state > PLINK_ESTAB)
+-			mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT);
+-	} else {
++			mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_SNT,
++					    EXTENDED_RETRY_TIMEOUT);
++	} else if (sta->plink_state) {
+ 		mesh_rsn_auth_sae_sta(wpa_s, sta);
+ 	}
+ }
+ 
+-
+ void mesh_mpm_mgmt_rx(struct wpa_supplicant *wpa_s, struct rx_mgmt *rx_mgmt)
+ {
+ 	struct hostapd_frame_info fi;
+@@ -1079,7 +1214,7 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 			mesh_mpm_fsm_restart(wpa_s, sta);
+ 			break;
+ 		case OPN_ACPT:
+-			mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_RCVD);
++			mesh_mpm_plink_open(wpa_s, sta, PLINK_OPN_RCVD, conf->dot11MeshRetryTimeout);
+ 			mesh_mpm_send_plink_action(wpa_s, sta, PLINK_CONFIRM,
+ 						   0);
+ 			break;
+@@ -1261,17 +1396,42 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 	case PLINK_HOLDING:
+ 		switch (event) {
+ 		case CLS_ACPT:
+-			mesh_mpm_fsm_restart(wpa_s, sta);
+ 
+-			if ( (hapd) && (hapd->num_plinks == 0) )
+-			{
++			if (hapd->mesh_switch_connection)
++				wpa_auth_pmksa_remove(hapd->wpa_auth, sta->addr);
+ 
++			mesh_mpm_fsm_restart(wpa_s, sta);
++
++			if (hapd && (hapd->num_plinks == 0)) {
+ 				wpa_s->global->mesh_on_demand.anyMeshConnected = FALSE;
+ 
+-				if ( (wpa_s->ifmsh) && (wpa_s->ifmsh->mesh_deinit_process))
++				if ((wpa_s->ifmsh) && (wpa_s->ifmsh->mesh_deinit_process))
+ 					wpa_supplicant_leave_mesh(wpa_s);
+ 			}
++
++			/* If this is switch connection process - trigger new connection*/
++                        if (hapd->mesh_switch_connection) {
++                                if (hapd->mesh_pending_action) {
++					/* open connection*/
++					hapd->mesh_switch_connection = FALSE;
++                                        mesh_mpm_action_rx(wpa_s,
++							   wpabuf_head(hapd->mesh_pending_action),
++							   wpabuf_len(hapd->mesh_pending_action));
++					hapd->mesh_pending_action = NULL;
++				} else if (hapd->mesh_pending_auth) {
++					/* secured connection*/
++					const struct ieee80211_mgmt *mgmt =
++						wpabuf_head(hapd->mesh_pending_auth);
++					/* Save the mac addr of the pending peer */
++                                        os_memcpy(hapd->mesh_beacon_pending_peer, mgmt->sa, ETH_ALEN);
++					/* Start timer on the switch connection process*/
++					eloop_register_timeout(SWITCH_CONN_TIMEOUT, 0,
++							       switch_connection_timer,
++							       wpa_s, NULL);
++				}
++			}
+ 			break;
++
+ 		case OPN_ACPT:
+ 		case CNF_ACPT:
+ 		case OPN_RJCT:
+@@ -1404,6 +1564,13 @@ void mesh_mpm_action_rx(struct wpa_supplicant *wpa_s,
+ 
+ 	if (!sta) {
+ 		wpa_printf(MSG_DEBUG, "MPM: No STA entry for peer");
++
++		/* If peer has other links - ignore this action */
++		if (elems.mesh_config_len && ((elems.mesh_config[5]>>1) & 0x3F))
++			return;
++
++		/*Peer has no other links - lets try to help*/
++		start_mesh_switch_connection(wpa_s, mgmt, len);
+ 		return;
+ 	}
+ 
+@@ -1582,5 +1749,7 @@ void mesh_mpm_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
+ 	if (hapd->num_plinks == 0) {
+ 		struct wpa_supplicant *wpa_s = hapd->iface->owner;
+                 wpa_s->global->mesh_on_demand.anyMeshConnected = FALSE;
++		/* trigger scan in 1.1sec - enough time to create new links*/
++		wpa_supplicant_mesh_delayed_scan(wpa_s, 1, 100000);
+ 	}
+ }
+diff --git a/wpa_supplicant/mesh_mpm.h b/wpa_supplicant/mesh_mpm.h
+index 4b00945..6f4abf3 100644
+--- a/wpa_supplicant/mesh_mpm.h
++++ b/wpa_supplicant/mesh_mpm.h
+@@ -12,6 +12,8 @@
+ /* notify MPM of new mesh peer to be inserted in MPM and driver */
+ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 			    struct ieee802_11_elems *elems);
++void wpa_mesh_connect(struct wpa_supplicant *wpa_s, const u8 *addr,
++		      u8 *ies, size_t ie_len);
+ void mesh_mpm_close_links(struct wpa_supplicant *wpa_s, struct hostapd_iface *ifmsh);
+ void mesh_mpm_auth_peer(struct wpa_supplicant *wpa_s, const u8 *addr);
+ void mesh_mpm_free_sta(struct hostapd_data *hapd, struct sta_info *sta);
+diff --git a/wpa_supplicant/mesh_rsn.c b/wpa_supplicant/mesh_rsn.c
+old mode 100644
+new mode 100755
+index 4b8d6c4..fcd4660
+--- a/wpa_supplicant/mesh_rsn.c
++++ b/wpa_supplicant/mesh_rsn.c
+@@ -365,6 +365,12 @@ int mesh_rsn_auth_sae_sta(struct wpa_supplicant *wpa_s,
+ 		return -1;
+ 	}
+ 
++        if (sta->sae && sta->sae->state > SAE_NOTHING) {
++		wpa_msg(wpa_s, MSG_DEBUG,
++			"AUTH: No nested connections!!");
++		return -1;
++	}
++
+ 	if (!sta->sae) {
+ 		sta->sae = os_zalloc(sizeof(*sta->sae));
+ 		if (sta->sae == NULL)
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+old mode 100644
+new mode 100755
+index 0c33b20..25eeb3d
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -2056,20 +2056,26 @@ void wpa_supplicant_associate(struct wpa_supplicant *wpa_s,
+ 				return;
+ 			}
+ 		}
+-
+-		if (wpa_supplicant_join_mesh(wpa_s, ssid) < 0) {
+-			wpa_msg(wpa_s, MSG_ERROR, "Could not join mesh");
+-			return;
++		if (wpa_s->ifmsh) {
++			wpa_mesh_connect(wpa_s, bss->bssid,
++					 (u8*) (bss + 1),
++					 bss->ie_len);
++		} else {
++			if (wpa_supplicant_join_mesh(wpa_s, ssid) < 0) {
++				wpa_msg(wpa_s, MSG_ERROR, "Could not join mesh");
++				return;
++			}
++			wpa_s->current_bss = bss;
++			wpa_msg(wpa_s, MSG_INFO, MESH_GROUP_STARTED "ssid=\"%s\" id=%d",
++				wpa_ssid_txt(ssid->ssid, ssid->ssid_len),
++				ssid->id);
++            wpas_notify_mesh_group_started(wpa_s, ssid);
+ 		}
+-		wpa_s->current_bss = bss;
+-		wpa_msg(wpa_s, MSG_INFO, MESH_GROUP_STARTED "ssid=\"%s\" id=%d",
+-			wpa_ssid_txt(ssid->ssid, ssid->ssid_len),
+-			ssid->id);
+-		wpas_notify_mesh_group_started(wpa_s, ssid);
+ #else /* CONFIG_MESH */
+ 		wpa_msg(wpa_s, MSG_ERROR,
+ 			"mesh mode support not included in the build");
+ #endif /* CONFIG_MESH */
++
+ 		return;
+ 	}
+ 
+-- 
+1.9.1
+

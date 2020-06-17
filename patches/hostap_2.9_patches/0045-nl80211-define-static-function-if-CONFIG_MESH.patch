@@ -1,0 +1,35 @@
+From 8db1958b6054c793d28fdc41ab94253af0d82843 Mon Sep 17 00:00:00 2001
+From: Mathieu Audat <mathieu.audat@savoirfairelinux.com>
+Date: Thu, 16 Nov 2017 10:47:19 +0200
+Subject: [PATCH 45/47] nl80211: define static function if CONFIG_MESH
+
+Do not define the static nl80211_get_low_signal_mesh function if CONFIG_MESH is not set.
+
+Signed-off-by: Mathieu Audat <mathieu.audat@savoirfairelinux.com>
+---
+ src/drivers/driver_nl80211.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 9224dc2..f0b0ca8 100755
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -10936,6 +10936,7 @@ static int nl80211_configure_data_frame_filters(void *priv, u32 filter_flags)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_MESH
+ static int nl80211_get_low_signal_mesh(void *priv, u8 *macaddr)
+ {
+ 	struct i802_bss *bss = priv;
+@@ -10950,6 +10951,7 @@ static int nl80211_get_low_signal_mesh(void *priv, u8 *macaddr)
+ 
+ 	return send_and_recv_msgs(drv, msg, netdev_info_handler, &info);
+ }
++#endif /* CONFIG_MESH */
+ 
+ static int nl80211_get_ext_capab(void *priv, enum wpa_driver_if_type type,
+ 				 const u8 **ext_capa, const u8 **ext_capa_mask,
+-- 
+1.9.1
+

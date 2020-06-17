@@ -1,0 +1,97 @@
+From d442eadfe16ee7678c0025d0814589da29af442b Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Mon, 22 Sep 2014 18:46:21 +0300
+Subject: [PATCH 04/47] p2p: prefer shared freq for GO operation [INTERNAL, AP
+ P2P]
+
+Look for other used frequencies (by other hostapd processes)
+and use/prefer them for the new GO.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ wpa_supplicant/driver_i.h       |  8 ++++++++
+ wpa_supplicant/p2p_supplicant.c | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 40 insertions(+)
+ mode change 100644 => 100755 wpa_supplicant/p2p_supplicant.c
+
+diff --git a/wpa_supplicant/driver_i.h b/wpa_supplicant/driver_i.h
+index cf9972a..656ccb1 100644
+--- a/wpa_supplicant/driver_i.h
++++ b/wpa_supplicant/driver_i.h
+@@ -672,6 +672,14 @@ static inline int wpa_drv_status(struct wpa_supplicant *wpa_s,
+ 	return wpa_s->driver->status(wpa_s->drv_priv, buf, buflen);
+ }
+ 
++static inline int wpa_drv_shared_ap_freq(struct wpa_supplicant *wpa_s,
++					 struct wpa_channel_info *info)
++{
++	if (!wpa_s->driver->shared_ap_freq)
++		return -1;
++	return wpa_s->driver->shared_ap_freq(wpa_s->drv_priv, info);
++}
++
+ static inline int wpa_drv_set_qos_map(struct wpa_supplicant *wpa_s,
+ 				      const u8 *qos_map_set, u8 qos_map_set_len)
+ {
+diff --git a/wpa_supplicant/p2p_supplicant.c b/wpa_supplicant/p2p_supplicant.c
+old mode 100644
+new mode 100755
+index 55b3b08..c723670
+--- a/wpa_supplicant/p2p_supplicant.c
++++ b/wpa_supplicant/p2p_supplicant.c
+@@ -5339,6 +5339,20 @@ static int wpas_p2p_setup_freqs(struct wpa_supplicant *wpa_s, int freq,
+ 		   "P2P: Setup freqs: freq=%d num_MCC=%d shared_freqs=%u num_unused=%d",
+ 		   freq, wpa_s->num_multichan_concurrent, num, num_unused);
+ 
++	/* find used frequencies by other hostapd processes */
++	if (!num) {
++		struct wpa_channel_info info;
++
++		if (wpa_drv_shared_ap_freq(wpa_s, &info) == 1) {
++			wpa_printf(MSG_DEBUG,
++				   "P2P: Prefer freq %d used by other ap interfaces",
++				   info.frequency);
++			num = 1;
++			freqs[0].freq = info.frequency;
++			freqs[0].flags = WPA_FREQ_USED_BY_INFRA_STATION;
++		}
++	}
++
+ 	if (freq > 0) {
+ 		int ret;
+ 		if (go)
+@@ -5962,6 +5976,7 @@ static int wpas_p2p_init_go_params(struct wpa_supplicant *wpa_s,
+ 				   int vht, int max_oper_chwidth, int he,
+ 				   const struct p2p_channels *channels)
+ {
++	struct wpa_channel_info info;
+ 	struct wpa_used_freq_data *freqs;
+ 	unsigned int cand;
+ 	unsigned int num, i;
+@@ -5976,6 +5991,23 @@ static int wpas_p2p_init_go_params(struct wpa_supplicant *wpa_s,
+ 	params->max_oper_chwidth = max_oper_chwidth;
+ 	params->vht_center_freq2 = vht_center_freq2;
+ 
++	/* sync with other running APs (unconditionally for now) */
++	if (wpa_drv_shared_ap_freq(wpa_s, &info) == 1) {
++		u8 chan;
++        int hw_mode = ieee80211_freq_to_chan(info.frequency, &chan);
++
++        if (hw_mode == NUM_HOSTAPD_MODES) {
++			wpa_printf(MSG_ERROR, "Shared AP freq bad channel");
++			return -3;
++        }
++
++        params->freq = info.frequency;
++        params->ht40 = info.sec_channel_offset != 0; /* TODO: do we want it? */
++        wpa_printf(MSG_DEBUG, "Channel automatically synced to "
++			"existing AP: %d (ht40=%d)", chan, ht40);
++        return 0;
++	}
++
+ 	freqs = os_calloc(wpa_s->num_multichan_concurrent,
+ 			  sizeof(struct wpa_used_freq_data));
+ 	if (!freqs)
+-- 
+1.9.1
+

@@ -1,0 +1,58 @@
+From 2416e14d2b083303688011a3efb6afd77278cc41 Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Thu, 19 Jul 2012 13:07:35 +0300
+Subject: [PATCH 38/47] ap: add missing WLAN_STA_ASSOC_REQ_OK flag cleanups
+
+cleanup of WLAN_STA_ASSOC_REQ_OK flag is missing in some
+places (e.g. when deauth a sta).
+
+(This in turn caused problems when working as GO, as our
+internal commit (a3e0a16 "Fix deauth with reason 7 due to
+multiple assoc_req received") caused reassociations
+(after WPS) to get dropped.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/drv_callbacks.c | 3 ++-
+ src/ap/sta_info.c      | 4 ++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/ap/drv_callbacks.c b/src/ap/drv_callbacks.c
+index 3158768..c20d3a6 100644
+--- a/src/ap/drv_callbacks.c
++++ b/src/ap/drv_callbacks.c
+@@ -681,7 +681,8 @@ void hostapd_notif_disassoc(struct hostapd_data *hapd, const u8 *addr)
+ 	}
+ 
+ 	ap_sta_set_authorized(hapd, sta, 0);
+-	sta->flags &= ~(WLAN_STA_AUTH | WLAN_STA_ASSOC);
++	sta->flags &= ~(WLAN_STA_AUTH | WLAN_STA_ASSOC |
++			WLAN_STA_ASSOC_REQ_OK);
+ 	wpa_auth_sm_event(sta->wpa_sm, WPA_DISASSOC);
+ 	sta->acct_terminate_cause = RADIUS_ACCT_TERMINATE_CAUSE_USER_REQUEST;
+ 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
+diff --git a/src/ap/sta_info.c b/src/ap/sta_info.c
+index 97d1d25..1ec4b57 100644
+--- a/src/ap/sta_info.c
++++ b/src/ap/sta_info.c
+@@ -545,7 +545,7 @@ skip_poll:
+ 	case STA_DISASSOC:
+ 	case STA_DISASSOC_FROM_CLI:
+ 		ap_sta_set_authorized(hapd, sta, 0);
+-		sta->flags &= ~WLAN_STA_ASSOC;
++		sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_ASSOC_REQ_OK);
+ 		ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
+ 		if (!sta->acct_terminate_cause)
+ 			sta->acct_terminate_cause =
+@@ -1326,7 +1326,7 @@ void ap_sta_disconnect(struct hostapd_data *hapd, struct sta_info *sta,
+ 	ap_sta_set_authorized(hapd, sta, 0);
+ 	wpa_auth_sm_event(sta->wpa_sm, WPA_DEAUTH);
+ 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
+-	sta->flags &= ~(WLAN_STA_AUTH | WLAN_STA_ASSOC);
++	sta->flags &= ~(WLAN_STA_AUTH | WLAN_STA_ASSOC | WLAN_STA_ASSOC_REQ_OK);
+ 	wpa_printf(MSG_DEBUG, "%s: %s: reschedule ap_handle_timer timeout "
+ 		   "for " MACSTR " (%d seconds - "
+ 		   "AP_MAX_INACTIVITY_AFTER_DEAUTH)",
+-- 
+1.9.1
+

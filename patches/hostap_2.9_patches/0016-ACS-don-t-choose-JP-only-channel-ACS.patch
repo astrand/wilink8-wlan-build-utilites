@@ -1,0 +1,31 @@
+From e62b57a593d276e43e799da5f079ff63d775293a Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Tue, 25 Nov 2014 16:35:40 +0200
+Subject: [PATCH 16/47] ACS: don't choose JP-only channel [ACS]
+
+Avoid using channels 38 and 42 which are valid
+only in JP.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/hw_features.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index e352b4d..bba2998 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -900,6 +900,10 @@ static int valid_ap_channel(struct hostapd_iface *iface, int chan)
+ 	if (chan == 14)
+ 		return 0;
+ 
++	/* don't allow JP-only channels */
++	if (chan == 38 || chan == 42)
++		return 0;
++
+ 	/* don't allow channels on the the ACS blacklist */
+ 	if (iface->conf->acs_blacklist) {
+ 		list = iface->conf->acs_blacklist;
+-- 
+1.9.1
+

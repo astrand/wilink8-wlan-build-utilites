@@ -1,0 +1,85 @@
+From 57c7e0abd793cbe3ad21f63432f770e69fab249d Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Wed, 26 Feb 2020 15:19:01 +0200
+Subject: [PATCH 42/47] Fix warrining compilation
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ src/ap/ieee802_11.c       | 2 ++
+ wpa_supplicant/mesh.c     | 4 +---
+ wpa_supplicant/mesh.h     | 2 ++
+ wpa_supplicant/mesh_mpm.c | 3 ++-
+ 4 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 8390c79..a6b7d62 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -54,6 +54,8 @@
+ #include "dpp_hostapd.h"
+ #include "gas_query_ap.h"
+ 
++extern int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
++                void *ctx);
+ 
+ #ifdef CONFIG_FILS
+ static struct wpabuf *
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 621eefa..3dc25b4 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -251,8 +251,6 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 	struct hostapd_config *conf;
+ 	struct mesh_conf *mconf;
+ 	int basic_rates_erp[] = { 60, 120, 240, -1 };
+-	static int default_groups[] = { 19, 20, 21, 25, 26, -1 };
+-	size_t len;
+ 	int rate_len;
+ 	int frequency;
+ 
+@@ -786,7 +784,7 @@ int wpas_mesh_peer_add(struct wpa_supplicant *wpa_s, const u8 *addr,
+ }
+ 
+ 
+-int wpa_supplicant_leave_mesh_initiate(struct wpa_supplicant *wpa_s)
++void wpa_supplicant_leave_mesh_initiate(struct wpa_supplicant *wpa_s)
+ {
+ 	wpa_s->ifmsh->mesh_deinit_process = TRUE;
+ 	mesh_mpm_close_links(wpa_s,wpa_s->ifmsh);
+diff --git a/wpa_supplicant/mesh.h b/wpa_supplicant/mesh.h
+index 7317083..36128c9 100644
+--- a/wpa_supplicant/mesh.h
++++ b/wpa_supplicant/mesh.h
+@@ -22,6 +22,8 @@ int wpas_mesh_peer_remove(struct wpa_supplicant *wpa_s, const u8 *addr);
+ int wpas_mesh_peer_add(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 		       int duration);
+ 
++void wpa_supplicant_leave_mesh_initiate(struct wpa_supplicant *wpa_s);
++
+ #ifdef CONFIG_MESH
+ 
+ void wpa_mesh_notify_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index 444ddfd..c67141a 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -19,6 +19,8 @@
+ #include "ap/wpa_auth.h"
+ #include "wpa_supplicant_i.h"
+ #include "driver_i.h"
++#include "mesh.h"
++#include "scan.h"
+ #include "mesh_mpm.h"
+ #include "mesh_rsn.h"
+ #include "notify.h"
+@@ -1065,7 +1067,6 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
+ 	struct mesh_conf *conf = wpa_s->ifmsh->mconf;
+ 	struct wpa_supplicant *keep_wpa_s = NULL;
+-	int found = FALSE;
+ 
+ 	wpa_msg(wpa_s, MSG_DEBUG, "MPM " MACSTR " state %s event %s",
+ 		MAC2STR(sta->addr), mplstate[sta->plink_state],
+-- 
+1.9.1
+

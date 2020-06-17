@@ -1,0 +1,136 @@
+From 0ea23fd6678a93565170c6056fd46ff41207d7bc Mon Sep 17 00:00:00 2001
+From: Chen Loewy <c-loewy@ti.com>
+Date: Thu, 7 Apr 2016 13:53:03 +0300
+Subject: [PATCH 35/47] Mesh: Fixed max peer links
+
+Added support for low ack, in that case we close the mesh link.
+Cleaned the handling of the num_plinks - now being reduced only in one place.
+
+Signed-off-by: Chen Loewy <c-loewy@ti.com>
+---
+ src/ap/ieee802_11.c       |  2 +-
+ wpa_supplicant/events.c   | 15 +++++++++++----
+ wpa_supplicant/mesh_mpm.c | 16 +++++++++-------
+ 3 files changed, 21 insertions(+), 12 deletions(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index e13e9de..4321cdb 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -2250,7 +2250,7 @@ static void handle_auth(struct hostapd_data *hapd,
+ 		if ( (hapd->conf->mesh & MESH_ENABLED) && (sta->plink_state == PLINK_ESTAB) )
+ 		{
+ 			mesh_mpm_plink_close(hapd,sta,hapd->iface->owner);
+-			hapd->num_plinks--;
++			return;		
+ 		}
+ #endif /* CONFIG_MESH */
+ 	} else {
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index e8f33c6..4b53c62 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -49,11 +49,10 @@
+ #include "mesh_mpm.h"
+ #include "wmm_ac.h"
+ #include "dpp_supplicant.h"
+-
++#include "ap/sta_info.h"
+ 
+ #define MAX_OWE_TRANSITION_BSS_SELECT_COUNT 5
+ 
+-
+ #ifndef CONFIG_NO_SCAN_PROCESSING
+ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 					      int new_scan, int own_request);
+@@ -4906,8 +4905,16 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
+ 			hostapd_event_sta_low_ack(wpa_s->ap_iface->bss[0],
+ 						  data->low_ack.addr);
+ 		if (wpa_s->ifmsh && data)
+-			hostapd_event_sta_low_ack(wpa_s->ifmsh->bss[0],
+-						  data->low_ack.addr);
++		{
++			struct hostapd_data *hapd;
++			struct sta_info *sta;
++
++			hapd = wpa_s->ifmsh->bss[0];
++			sta = ap_get_sta(hapd,data->low_ack.addr);
++
++			if (sta->plink_state == PLINK_ESTAB)
++				mesh_mpm_plink_close(hapd,sta,wpa_s);		
++		}
+ #endif /* CONFIG_AP */
+ #ifdef CONFIG_TDLS
+ 		if (data)
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index a774d8d..38475e1 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -458,6 +458,8 @@ static void mesh_mpm_fsm_restart(struct wpa_supplicant *wpa_s,
+ {
+ 	struct hostapd_data *hapd = wpa_s->ifmsh->bss[0];
+ 
++	hapd->num_plinks--;
++
+ 	eloop_cancel_timeout(plink_timer, wpa_s, sta);
+ 
+ 	ap_free_sta(hapd, sta);
+@@ -493,7 +495,6 @@ static void mesh_close_links_timer(void *eloop_ctx, void *user_data)
+ 
+ 			if (hapd->num_plinks > 0)
+ 			{
+-				hapd->num_plinks--;
+ 				mesh_mpm_fsm_restart(wpa_s, last_station);
+ 				next_station = last_station->next;
+ 			}
+@@ -504,7 +505,6 @@ static void mesh_close_links_timer(void *eloop_ctx, void *user_data)
+ 			last_station = next_station;
+ 			next_station  = next_station->next;
+ 
+-			hapd->num_plinks--;
+ 			mesh_mpm_fsm_restart(wpa_s, last_station);
+ 		}
+ 		hapd->num_plinks = 0;
+@@ -617,15 +617,19 @@ int mesh_mpm_plink_close(struct hostapd_data *hapd, struct sta_info *sta,
+ 				void *ctx)
+ {
+ 	struct wpa_supplicant *wpa_s = ctx;
++	struct mesh_conf *conf = wpa_s->ifmsh->mconf;
++	
+ 	int reason = WLAN_REASON_MESH_PEERING_CANCELLED;
+ 
+ 	if (sta) {
+ 		wpa_mesh_set_plink_state(wpa_s, sta, PLINK_HOLDING);
+-//		hapd->num_plinks--;
++
+ 		mesh_mpm_send_plink_action(wpa_s, sta, PLINK_CLOSE, reason);
+ 		wpa_printf(MSG_DEBUG, "MPM closing plink sta=" MACSTR,
+ 			   MAC2STR(sta->addr));
+-		eloop_cancel_timeout(plink_timer, wpa_s, sta);
++		eloop_register_timeout(conf->dot11MeshRetryTimeout / 1000,
++			       (conf->dot11MeshRetryTimeout % 1000) * 1000,
++			       plink_timer, wpa_s, sta);
+ 		return 0;
+ 	}
+ 
+@@ -1035,7 +1039,7 @@ static void mesh_mpm_plink_estab(struct wpa_supplicant *wpa_s,
+ 	wpa_mesh_set_plink_state(wpa_s, sta, PLINK_ESTAB);
+ 	hapd->num_plinks++;
+ 
+-	wpa_msg(wpa_s,MSG_INFO,"================================================> PLINKS NUMBER: %d",hapd->num_plinks);
++	wpa_msg(wpa_s,MSG_INFO,"===> PLINKS NUMBER: %d",hapd->num_plinks);
+ 
+ 	sta->flags |= WLAN_STA_ASSOC;
+ 	sta->mesh_sae_pmksa_caching = 0;
+@@ -1259,8 +1263,6 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 			wpas_notify_mesh_peer_disconnected(wpa_s, sta->addr,
+ 							   reason);
+ 
+-			hapd->num_plinks--;
+-
+ 			mesh_mpm_send_plink_action(wpa_s, sta,
+ 						   PLINK_CLOSE, reason);
+ 			break;
+-- 
+1.9.1
+

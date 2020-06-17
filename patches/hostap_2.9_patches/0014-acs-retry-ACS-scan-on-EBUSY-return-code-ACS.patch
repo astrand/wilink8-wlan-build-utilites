@@ -1,0 +1,65 @@
+From 6e48d56383e79843d1851684b648ba09e8362fad Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Thu, 15 Jan 2015 13:46:02 +0200
+Subject: [PATCH 14/47] acs: retry ACS scan on EBUSY return code [ACS]
+
+register a retry scan function if ACS failed due
+to another ongoing scan.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/hw_features.c | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index 5d33940..e352b4d 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -477,10 +477,19 @@ static void ap_ht40_scan_retry(void *eloop_data, void *user_data)
+ 	hostapd_setup_interface_complete(iface, 0);
+ }
+ 
++static int hostapd_auto_select_channel(struct hostapd_iface *iface);
++static void hostapd_acs_scan_retry(void *eloop_data, void *user_data)
++{
++	struct hostapd_iface *iface = eloop_data;
++
++	hostapd_auto_select_channel(iface);
++}
++
+ 
+ void hostapd_stop_setup_timers(struct hostapd_iface *iface)
+ {
+ 	eloop_cancel_timeout(ap_ht40_scan_retry, iface, NULL);
++	eloop_cancel_timeout(hostapd_acs_scan_retry, iface, NULL);
+ }
+ 
+ 
+@@ -1157,13 +1166,22 @@ free_chans:
+ 
+ static int hostapd_auto_select_channel(struct hostapd_iface *iface)
+ {
+-
++	int ret;
+ 	struct wpa_driver_scan_params params;
+ 
+ 	/* TODO: we can scan only the current HW mode */
+ 	wpa_printf(MSG_DEBUG, "Scan for neighboring BSSes to select channel");
+ 	os_memset(&params, 0, sizeof(params));
+-	if (hostapd_driver_scan(iface->bss[0], &params) < 0) {
++	ret = hostapd_driver_scan(iface->bss[0], &params);
++	if (ret == -EBUSY) {
++		wpa_printf(MSG_DEBUG,
++			   "Failed to request a scan of neighboring BSSes - try again");
++		eloop_register_timeout(1, 0, hostapd_acs_scan_retry,
++				       iface, NULL);
++		return 0;
++	}
++
++	if (ret < 0) {
+ 		wpa_printf(MSG_ERROR, "Failed to request a scan of "
+ 			   "neighboring BSSes");
+ 		return -1;
+-- 
+1.9.1
+

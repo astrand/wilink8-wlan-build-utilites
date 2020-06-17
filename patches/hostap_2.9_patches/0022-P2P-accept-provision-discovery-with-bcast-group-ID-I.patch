@@ -1,0 +1,37 @@
+From e3a36c72566cd4950e485f9f8eb7f9f234ede7db Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Tue, 29 Jan 2013 17:13:04 +0200
+Subject: [PATCH 22/47] P2P: accept provision discovery with bcast group ID
+ [IOP]
+
+Some bogus devices send provision discovery requests with
+bcast group id, which is invalid. However, as we currently
+must accept these requests, as they are needed for certification.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+Signed-off-by: Igal Chernobelsky <igalc@ti.com>
+---
+ src/p2p/p2p_group.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/p2p/p2p_group.c b/src/p2p/p2p_group.c
+index aa18af6..9d9465a 100644
+--- a/src/p2p/p2p_group.c
++++ b/src/p2p/p2p_group.c
+@@ -1049,9 +1049,12 @@ int p2p_group_is_client_connected(struct p2p_group *group, const u8 *dev_addr)
+ int p2p_group_is_group_id_match(struct p2p_group *group, const u8 *group_id,
+ 				size_t group_id_len)
+ {
++	const u8 bcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
++
+ 	if (group_id_len != ETH_ALEN + group->cfg->ssid_len)
+ 		return 0;
+-	if (os_memcmp(group_id, group->p2p->cfg->dev_addr, ETH_ALEN) != 0)
++	if ((os_memcmp(group_id, group->p2p->cfg->dev_addr, ETH_ALEN) != 0) &&
++	    (os_memcmp(group_id, bcast, ETH_ALEN) != 0))
+ 		return 0;
+ 	return os_memcmp(group_id + ETH_ALEN, group->cfg->ssid,
+ 			 group->cfg->ssid_len) == 0;
+-- 
+1.9.1
+

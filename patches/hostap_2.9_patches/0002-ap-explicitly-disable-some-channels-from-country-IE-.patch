@@ -1,0 +1,53 @@
+From 9effa911f38ca10c2c624cc25379005436dcd393 Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Tue, 4 Nov 2014 12:22:17 +0200
+Subject: [PATCH 02/47] ap: explicitly disable some channels from country IE
+ [INTERNAL, REG]
+
+According to the requirement, channels 38/42/46 should not
+be advertised for non-JP countries. look for it explicitly.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/beacon.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/ap/beacon.c b/src/ap/beacon.c
+index a51b949..5683579 100644
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
+@@ -224,6 +224,21 @@ static u8 * hostapd_eid_country_add(u8 *pos, u8 *end, int chan_spacing,
+ 	return pos;
+ }
+ 
++static int
++hostapd_eid_country_skip_channel(const char *country,
++				 struct hostapd_channel_data *chan)
++{
++	int c = chan->chan;
++
++	/* skip channels 38, 42, 46 if country is not JP */
++	if (os_memcmp(country, "JP", 2) == 0)
++		return 0;
++
++	if (c == 38 || c == 42 || c == 46)
++		return 1;
++
++	return 0;
++}
+ 
+ static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
+ 				int max_len)
+@@ -253,6 +268,9 @@ static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
+ 		struct hostapd_channel_data *chan = &mode->channels[i];
+ 		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+ 			continue;
++		if (hostapd_eid_country_skip_channel(hapd->iconf->country,
++						     chan))
++			continue;
+ 		if (start && prev &&
+ 		    prev->chan + chan_spacing == chan->chan &&
+ 		    start->max_tx_power == chan->max_tx_power) {
+-- 
+1.9.1
+

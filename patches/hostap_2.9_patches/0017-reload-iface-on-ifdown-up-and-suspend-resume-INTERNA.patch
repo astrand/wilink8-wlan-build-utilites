@@ -1,0 +1,31 @@
+From c2014f5ed1483159e051c85c95024e47d915fc5d Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Sun, 23 Mar 2014 17:37:43 +0200
+Subject: [PATCH 17/47] reload iface on ifdown/up and suspend/resume (INTERNAL)
+
+When getting NL80211_CMD_STOP_AP (e.g. on suspend),
+disable and re-enable the interface, so the ap
+will be reconfigured (on resume, as this is when
+we get the event).
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/drivers/driver_nl80211_event.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/drivers/driver_nl80211_event.c b/src/drivers/driver_nl80211_event.c
+index 7c16330..dfacc20 100644
+--- a/src/drivers/driver_nl80211_event.c
++++ b/src/drivers/driver_nl80211_event.c
+@@ -2611,6 +2611,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
+ 		nl80211_radar_event(drv, tb);
+ 		break;
+ 	case NL80211_CMD_STOP_AP:
++		wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_DISABLED, NULL);
++		wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_ENABLED, NULL);
+ 		nl80211_stop_ap(drv, tb);
+ 		break;
+ 	case NL80211_CMD_VENDOR:
+-- 
+1.9.1
+

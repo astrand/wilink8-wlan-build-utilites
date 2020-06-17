@@ -1,0 +1,53 @@
+From dd133890af778730abee24d38fb2e236a7c20df1 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Mon, 2 May 2016 15:06:43 +0300
+Subject: [PATCH 40/47] mesh on demand: Allow BG scan user configuration
+
+Enable BG scan params configuration from network profile.
+Change default BG scan period from 30 sec to 0xFFFF.
+Set sched scan to every 60 sec instead of 10 sec.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ wpa_supplicant/events.c |  2 +-
+ wpa_supplicant/mesh.c   | 10 ++++++++--
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 4b53c62..084993b 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -2007,7 +2007,7 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 
+ 					if (wpa_s->global->mesh_on_demand.anyMeshConnected)
+ 					{
+-						wpa_supplicant_req_scan(wpa_s,10,0);
++						wpa_supplicant_req_scan(wpa_s,60,0);
+ 						wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - Mesh connected and bad RSSI - Don't connect");
+ 						return -1;
+ 					}
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 125225b..d075b72 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -419,9 +419,15 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 		wpa_s->global->mesh_on_demand.signal_threshold 	= wpa_s->conf->signal_threshold;
+ 		wpa_s->global->mesh_on_demand.meshBlocked	 	= TRUE;
+ 		wpa_msg(wpa_s, MSG_DEBUG,"Mesh on demand - ============= MESH IS BLOCKED");
+-		sprintf(wpa_s->global->mesh_on_demand.signal_threshold_name,"learn:30:%d:30\n",wpa_s->global->mesh_on_demand.signal_threshold);
++                if (ssid->bgscan)
++			sprintf(wpa_s->global->mesh_on_demand.signal_threshold_name,"%s", ssid->bgscan);
++		else
++			sprintf(wpa_s->global->mesh_on_demand.signal_threshold_name,"learn:%d:%d:%d\n",
++				0xFFFF,
++				wpa_s->global->mesh_on_demand.signal_threshold,
++				0xFFFF);
+ 
+-		/*
++                /*
+ 		* Check if we already have a connected station
+ 		* if that's the case write over the bgscan parameters the new threshold value we would like to use
+ 		*/
+-- 
+1.9.1
+

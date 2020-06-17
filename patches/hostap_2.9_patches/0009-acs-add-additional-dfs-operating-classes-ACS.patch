@@ -1,0 +1,33 @@
+From 07c01217907e86147a64be5d897a6e2b6a6d913e Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Tue, 3 Jun 2014 10:12:45 +0300
+Subject: [PATCH 09/47] acs: add additional dfs operating classes [ACS]
+
+This will allow choosing dfs ht40 channels
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+---
+ src/ap/hw_features.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index 6c5fcff..a824995 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -931,6 +931,13 @@ static struct oper_class_map op_class[] = {
+ 	{ HOSTAPD_MODE_IEEE80211A, 117, 40, 48, 8, BW40MINUS },
+ 	{ HOSTAPD_MODE_IEEE80211A, 126, 149, 157, 8, BW40PLUS },
+ 	{ HOSTAPD_MODE_IEEE80211A, 127, 153, 161, 8, BW40MINUS },
++
++	/* acs specific - allow (japan) DFS operating classes */
++	{ HOSTAPD_MODE_IEEE80211A, 37, 52, 60, 8, BW40PLUS },
++	{ HOSTAPD_MODE_IEEE80211A, 42, 56, 64, 8, BW40MINUS },
++	{ HOSTAPD_MODE_IEEE80211A, 39, 100, 132, 8, BW40PLUS },
++	{ HOSTAPD_MODE_IEEE80211A, 44, 104, 136, 8, BW40MINUS },
++
+ 	{ -1, 0, 0, 0, 0, BW40PLUS } /* terminator */
+ };
+ 
+-- 
+1.9.1
+

@@ -1,0 +1,39 @@
+From 1c6bb93c7d21629cc719a32e2e15ea58ccaa2e97 Mon Sep 17 00:00:00 2001
+From: Arik Nemtsov <arik@wizery.com>
+Date: Thu, 27 Dec 2012 09:49:43 +0200
+Subject: [PATCH 21/47] P2P: accommodate peers that use the GO address in
+ prov_disc_resp [IOP]
+
+Don't try to perform another PD with the remote peer if we already have
+one with its interface (GO) address. Usually the dev address is used in
+this case.
+
+This is compatibility fix for the Google CTS testing suite.
+
+Change-Id: Ie8c53fc66cc845c3e0c35ece88b520590045e350
+Signed-off-by: Arik Nemtsov <arik@wizery.com>
+---
+ wpa_supplicant/p2p_supplicant.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/wpa_supplicant/p2p_supplicant.c b/wpa_supplicant/p2p_supplicant.c
+index c14d67f..3ebe65b 100755
+--- a/wpa_supplicant/p2p_supplicant.c
++++ b/wpa_supplicant/p2p_supplicant.c
+@@ -5054,9 +5054,10 @@ static void wpas_p2p_scan_res_join(struct wpa_supplicant *wpa_s,
+ 			break;
+ 		}
+ 
+-		if ((p2p_get_provisioning_info(wpa_s->global->p2p,
+-					       wpa_s->pending_join_dev_addr) ==
+-		     method)) {
++		if (p2p_get_provisioning_info(wpa_s->global->p2p,
++				wpa_s->pending_join_dev_addr) == method ||
++		    p2p_get_provisioning_info(wpa_s->global->p2p,
++				wpa_s->pending_join_iface_addr) == method) {
+ 			/*
+ 			 * We have already performed provision discovery for
+ 			 * joining the group. Proceed directly to join
+-- 
+1.9.1
+

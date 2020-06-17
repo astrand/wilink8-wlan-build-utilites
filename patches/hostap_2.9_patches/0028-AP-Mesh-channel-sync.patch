@@ -1,0 +1,56 @@
+From d94f9eb3e95a94c3be635ccd3efde08c09165377 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Thu, 17 Mar 2016 13:46:30 +0200
+Subject: [PATCH 28/47] AP-Mesh channel sync
+
+If mesh is joined before AP, AP will sync channel to
+the mesh channel.
+If AP is already up and mesh required to join
+on a different channel, mesh will not join.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ src/drivers/driver_nl80211.c    |  3 ++-
+ wpa_supplicant/wpa_supplicant.c | 12 ++++++++++++
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index e63141b..e5ba68f 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -7892,7 +7892,8 @@ static int ap_freq_info_handler(struct nl_msg *msg, void *arg)
+ 
+ 	/* we only care about APs */
+ 	iftype = nla_get_u32(tb[NL80211_ATTR_IFTYPE]);
+-	if (iftype != NL80211_IFTYPE_AP && iftype != NL80211_IFTYPE_P2P_GO)
++	if (iftype != NL80211_IFTYPE_AP && iftype != NL80211_IFTYPE_P2P_GO &&
++	    iftype != NL80211_IFTYPE_MESH_POINT)
+ 		goto out;
+ 
+ 	data->info->frequency = nla_get_u32(tb[NL80211_ATTR_WIPHY_FREQ]);
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index a7307b8..4a0edc7 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -2030,6 +2030,18 @@ void wpa_supplicant_associate(struct wpa_supplicant *wpa_s,
+ 		}
+ 		if (bss)
+ 			ssid->frequency = bss->freq;
++		else {
++			struct wpa_channel_info info;
++
++			if ((wpa_drv_shared_ap_freq(wpa_s, &info) == 1) &&
++			    (ssid->frequency != info.frequency)) {
++				wpa_msg(wpa_s, MSG_ERROR, "AP running "
++					"on a different channel. "
++					"Will not join mesh");
++				return;
++			}
++		}
++
+ 		if (wpa_supplicant_join_mesh(wpa_s, ssid) < 0) {
+ 			wpa_msg(wpa_s, MSG_ERROR, "Could not join mesh");
+ 			return;
+-- 
+1.9.1
+
