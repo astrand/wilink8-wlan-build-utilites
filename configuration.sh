@@ -49,11 +49,12 @@ processor-sdk-linux-02.00.01
 
 openssl
 git://github.com/openssl/openssl
-OpenSSL_1_0_2d
+OpenSSL_1_1_1b
 
 libnl
-git://github.com/tgraf/libnl.git
-libnl3_2_25
+#git://github.com/tgraf/libnl.git <-- old path
+git://github.com/thom311/libnl.git
+libnl3_4_0
 
 crda
 git://git.ti.com/wilink8-wlan/crda.git
@@ -69,7 +70,7 @@ upstream_44
 
 hostap
 git://git.ti.com/wilink8-wlan/hostap.git
-upstream_25_rebase
+upstream_29_rebase
 
 ti_utils
 git://git.ti.com/wilink8-wlan/18xx-ti-utils.git
