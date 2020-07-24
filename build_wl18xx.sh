@@ -390,12 +390,12 @@ function build_modules()
 function build_openssl()
 {
 	cd_repo openssl
-	[ -z $NO_CONFIG ] && ./Configure linux-generic32
+	[ -z $NO_CONFIG ] && ./Configure linux-generic32 --prefix=`path filesystem`/usr
 	[ -z $NO_CLEAN ] && make clean
 	[ -z $NO_CLEAN ] && assert_no_error
 	make
 	assert_no_error
-	make install_sw
+	DESTDIR=`path filesystem` make install_sw
 	assert_no_error
 	cd_back
 }
@@ -439,6 +439,7 @@ function build_wpa_supplicant()
 	assert_no_error
 	cd_back    
     cp `repo_path scripts_download`/conf/*_supplicant.conf  `path filesystem`/etc/
+    sudo mv `path filesystem`/usr/local/sbin/wpa* `path filesystem`/usr/sbin
 }
 
 function build_hostapd()
@@ -454,6 +455,7 @@ function build_hostapd()
 	assert_no_error
 	cd_back
     cp `repo_path scripts_download`/conf/hostapd.conf  `path filesystem`/etc/    
+    sudo mv `path filesystem`/usr/local/bin/host* `path filesystem`/usr/sbin
 }
 
 function build_crda()
