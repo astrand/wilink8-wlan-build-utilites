@@ -389,13 +389,21 @@ function build_modules()
 
 function build_openssl()
 {
+	echo "**** In build_openssll function ********"	
 	cd_repo openssl
 	[ -z $NO_CONFIG ] && ./Configure linux-generic32 --prefix=`path filesystem`/usr
 	[ -z $NO_CLEAN ] && make clean
 	[ -z $NO_CLEAN ] && assert_no_error
 	make
 	assert_no_error
-	DESTDIR=`path filesystem` make install_sw
+	if [[ "$INSTALL_LIBNL_LIBCRYPTO" != "FALSE" ]]
+    	then
+		DESTDIR=`path filesystem` make install_sw
+		echo "Installing libcrypto and libssl"	
+	else
+		echo "Do not Install libcrypto and libss"	
+	fi
+	
 	assert_no_error
 	cd_back
 }
@@ -414,6 +422,7 @@ function build_iw()
 }
 function build_libnl()
 {
+	echo "**** In build_libnl function ********"	
 	cd_repo libnl
 	[ -z $NO_CONFIG ] && ./autogen.sh
 	[ -z $NO_CONFIG ] && ./configure --prefix=`path filesystem` --host=${ARCH} CC=${CROSS_COMPILE}gcc AR=${CROSS_COMPILE}ar
@@ -422,6 +431,28 @@ function build_libnl()
 	make
 	assert_no_error
 	make install
+	assert_no_error
+	#Delete compiled bins. These are not used in SDK
+	sync
+	sync
+	rm -rf `path filesystem`/bin/nf*
+	rm -rf `path filesystem`/bin/nl*
+	rm -rf `path filesystem`/include/libnl3/*
+	sudo rmdir `path filesystem`/include/libnl3
+	rm -rf `path filesystem`/lib/libnl*.a
+	rm -rf `path filesystem`/lib/libnl*.la
+	rm -rf `path filesystem`/lib/libnl/*
+	sudo rmdir `path filesystem`/lib/libnl
+	
+	if [[ "$INSTALL_LIBNL_LIBCRYPTO" != "FALSE" ]]
+    	then
+		echo "Installing libnl outputs"
+	else
+		echo "Do not install libnl output"
+		#part of SDK. Retain based on user choice 
+		rm -rf `path filesystem`/etc/libnl/*
+		sudo rmdir `path filesystem`/etc/libnl
+	fi
 	assert_no_error
 	cd_back
 }
