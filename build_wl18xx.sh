@@ -157,9 +157,11 @@ function read_kernel_version()
 #----------------------------------------------------------j
 function setup_environment()
 {
+   
+    print_highlight " *** Entering to create the setup environment based on setup-env file ....."
     if [ ! -e setup-env ]
     then
-        echo "No setup-env"
+        echo "******** No setup-env file found !! Exiting the script ***********************"
         exit 1
     fi
     
@@ -391,19 +393,12 @@ function build_openssl()
 {
 	echo "**** In build_openssll function ********"	
 	cd_repo openssl
-	[ -z $NO_CONFIG ] && ./Configure linux-generic32 --prefix=`path filesystem`/usr
+	[ -z $NO_CONFIG ] && ./Configure linux-generic32 --prefix=`path filesystem`/usr/local
 	[ -z $NO_CLEAN ] && make clean
 	[ -z $NO_CLEAN ] && assert_no_error
 	make
 	assert_no_error
-	if [[ "$INSTALL_LIBNL_LIBCRYPTO" != "FALSE" ]]
-    	then
-		DESTDIR=`path filesystem` make install_sw
-		echo "Installing libcrypto and libssl"	
-	else
-		echo "Do not Install libcrypto and libss"	
-	fi
-	
+	DESTDIR=`path filesystem` make install_sw
 	assert_no_error
 	cd_back
 }
@@ -431,28 +426,6 @@ function build_libnl()
 	make
 	assert_no_error
 	make install
-	assert_no_error
-	#Delete compiled bins. These are not used in SDK
-	sync
-	sync
-	rm -rf `path filesystem`/bin/nf*
-	rm -rf `path filesystem`/bin/nl*
-	rm -rf `path filesystem`/include/libnl3/*
-	sudo rmdir `path filesystem`/include/libnl3
-	rm -rf `path filesystem`/lib/libnl*.a
-	rm -rf `path filesystem`/lib/libnl*.la
-	rm -rf `path filesystem`/lib/libnl/*
-	sudo rmdir `path filesystem`/lib/libnl
-	
-	if [[ "$INSTALL_LIBNL_LIBCRYPTO" != "FALSE" ]]
-    	then
-		echo "Installing libnl outputs"
-	else
-		echo "Do not install libnl output"
-		#part of SDK. Retain based on user choice 
-		rm -rf `path filesystem`/etc/libnl/*
-		sudo rmdir `path filesystem`/etc/libnl
-	fi
 	assert_no_error
 	cd_back
 }

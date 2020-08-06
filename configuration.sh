@@ -90,7 +90,7 @@ upstream_44
 
 iw
 git://git.kernel.org/pub/scm/linux/kernel/git/jberg/iw.git
-v4.1
+v4.14
 
 uim
 git://git.ti.com/ti-bt/uim.git

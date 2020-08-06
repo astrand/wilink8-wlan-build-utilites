@@ -32,6 +32,3 @@ export CROSS_COMPILE=arm-linux-gnueabihf-
 export ARCH=arm
 [ "$TOOLCHAIN_PATH" != "DEFAULT" ] && export PATH=$TOOLCHAIN_PATH:$PATH
 
-#  Install libnl , libcrypto. TI SDK already includes these libraries. By default it is set to FALSE
-export INSTALL_LIBNL_LIBCRYPTO=FALSE
-
