@@ -1,0 +1,57 @@
+From 5156e27d0522933dc1ccb84649b14120be63bd54 Mon Sep 17 00:00:00 2001
+From: Maxim Altshul <maxim.altshul@ti.com>
+Date: Tue, 15 Dec 2015 10:07:03 -0800
+Subject: [PATCH 08/18] mesh: implement mac80211 op: get_rate_info
+
+Driver will now implement the opcode.
+This allows the driver to directly send FW reported
+rates to mesh_hwmp module and calculate correct metrics.
+
+Still need to add trace to new op.
+
+Signed-off-by: Maxim Altshul <maxim.altshul@ti.com>
+---
+ drivers/net/wireless/ti/wlcore/main.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/drivers/net/wireless/ti/wlcore/main.c b/drivers/net/wireless/ti/wlcore/main.c
+index d74e5bb..7edc86a 100644
+--- a/drivers/net/wireless/ti/wlcore/main.c
++++ b/drivers/net/wireless/ti/wlcore/main.c
+@@ -5869,6 +5869,25 @@ out:
+ 	return ret;
+ }
+ 
++static int wlcore_op_mesh_get_mbps_estimation(struct ieee80211_hw *hw,
++			struct ieee80211_sta *sta,
++			int *rate)
++{
++	struct wl1271 *wl = hw->priv;
++	struct wl1271_station *wl_sta = (struct wl1271_station *)sta->drv_priv;
++	u8 hlid = wl_sta->hlid;
++	int ret = 1;
++
++	/* return in units of 100kbps */
++	*rate = (wl->links[hlid].fw_rate_mbps * 10);
++
++	/* if rate is 0 then we have no data for caller */
++	if (!*rate)
++		ret = -ENODATA;
++
++	return ret;
++}
++
+ /* can't be const, mac80211 writes to this */
+ static struct ieee80211_rate wl1271_rates[] = {
+ 	{ .bitrate = 10,
+@@ -6052,6 +6071,7 @@ static const struct ieee80211_ops wl1271_ops = {
+ 	.sta_rc_update = wlcore_op_sta_rc_update,
+ 	.sta_statistics = wlcore_op_sta_statistics,
+ 	.get_expected_throughput = wlcore_op_get_expected_throughput,
++	.mesh_get_mbps_estimation = wlcore_op_mesh_get_mbps_estimation,
+ 	CFG80211_TESTMODE_CMD(wl1271_tm_cmd)
+ };
+ 
+-- 
+1.9.1
+

@@ -1,0 +1,49 @@
+From 3aaa44e6e0cdb12767de31f1970334d055003896 Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Thu, 27 Feb 2020 16:13:14 +0200
+Subject: [PATCH 47/47] Fix some Mesh sec bugs
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ wpa_supplicant/events.c   | 2 +-
+ wpa_supplicant/mesh_mpm.c | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 4c843b0..10ce749 100755
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -2010,7 +2010,7 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
+ 	wpa_s->owe_transition_search = 0;
+ 	selected = wpa_supplicant_pick_network(wpa_s, &ssid);
+ 
+-#ifdef CONFIG_MESH
++#if 0
+ 	if (wpa_s->ifmsh) {
+ 		wpa_msg(wpa_s, MSG_INFO,
+ 			"Avoiding join because we already joined a mesh group");
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index b4f5074..cd2df03 100755
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -1357,13 +1357,13 @@ static void mesh_mpm_fsm(struct wpa_supplicant *wpa_s, struct sta_info *sta,
+ 		break;
+ 	case PLINK_ESTAB:
+ 		switch (event) {
+-		case OPN_RJCT:
+-		case CNF_RJCT:
++//case OPN_RJCT:
++//	case CNF_RJCT:
+ 		case CLS_ACPT:
+ 			wpa_mesh_set_plink_state(wpa_s, sta, PLINK_HOLDING);
+             hapd->num_plinks--;
+-			if (!reason)
+-				reason = WLAN_REASON_MESH_CLOSE_RCVD;
++	//		if (!reason)
++			reason = WLAN_REASON_MESH_CLOSE_RCVD;
+ 
+ 			eloop_register_timeout(
+ 				conf->dot11MeshHoldingTimeout / 1000,
+-- 
+1.9.1
+

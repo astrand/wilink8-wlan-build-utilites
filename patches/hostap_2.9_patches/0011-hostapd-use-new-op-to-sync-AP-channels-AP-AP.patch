@@ -1,0 +1,137 @@
+From c78f34589cc2197e150ab2b7aa53cce2bfc8a663 Mon Sep 17 00:00:00 2001
+From: Arik Nemtsov <arik@wizery.com>
+Date: Sun, 25 Aug 2013 17:08:27 +0300
+Subject: [PATCH 11/47] hostapd: use new op to sync AP channels [AP AP]
+
+A new op will be used to get the operational frequency and secondary
+channel of any existing APs, even if operating in different processes.
+
+Use this op to select the channel for the current AP, if dictated by
+the ap_channel_sync config parameter.
+
+Signed-off-by: Arik Nemtsov <arik@wizery.com>
+---
+ src/ap/ap_drv_ops.h  |  8 ++++++++
+ src/ap/hw_features.c | 31 ++++++++++++++++++++++++++++++-
+ src/drivers/driver.h | 23 +++++++++++++++++++++++
+ 3 files changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/src/ap/ap_drv_ops.h b/src/ap/ap_drv_ops.h
+index ca7f7ab..e74103b 100644
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
+@@ -356,6 +356,14 @@ static inline int hostapd_drv_vendor_cmd(struct hostapd_data *hapd,
+ 					data_len, buf);
+ }
+ 
++static inline int hostapd_drv_shared_ap_freq(struct hostapd_data *hapd,
++					     struct wpa_channel_info *info)
++{
++	if (hapd->driver == NULL || hapd->driver->shared_ap_freq == NULL)
++		return -1;
++	return hapd->driver->shared_ap_freq(hapd->drv_priv, info);
++}
++
+ static inline int hostapd_drv_stop_ap(struct hostapd_data *hapd)
+ {
+ 	if (!hapd->driver || !hapd->driver->stop_ap || !hapd->drv_priv)
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index a824995..0b042b0 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -878,7 +878,6 @@ out:
+ 	return hostapd_setup_interface_complete(iface, ret);
+ }
+ 
+-
+ static int valid_ap_channel(struct hostapd_iface *iface, int chan)
+ {
+ 	int j;
+@@ -1183,6 +1182,7 @@ static int hostapd_auto_select_channel(struct hostapd_iface *iface)
+ int hostapd_select_hw_mode(struct hostapd_iface *iface)
+ {
+ 	int i;
++	struct wpa_channel_info info;
+ 
+ 	if (iface->num_hw_features < 1)
+ 		return -1;
+@@ -1237,6 +1237,35 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
+ 		}
+ 	}
+ 
++	/* if we failed in querying the channel, assume no concurrent operation */
++	if (iface->conf->ap_channel_sync &&
++	    hostapd_drv_shared_ap_freq(iface->bss[0], &info) == 1) {
++		u8 chan;
++		int hw_mode = ieee80211_freq_to_chan(info.frequency, &chan);
++
++		if (hw_mode == NUM_HOSTAPD_MODES) {
++			wpa_printf(MSG_ERROR, "Shared AP freq bad channel");
++			return -3;
++		}
++
++		/* set current mode */
++		for (i = 0; i < iface->num_hw_features; i++) {
++			struct hostapd_hw_modes *mode = &iface->hw_features[i];
++
++			if (mode->mode == hw_mode) {
++				iface->current_mode = mode;
++				break;
++			}
++		}
++
++		iface->conf->channel = chan;
++		iface->conf->secondary_channel = info.sec_channel_offset;
++		wpa_printf(MSG_DEBUG, "Channel automatically synced to "
++			   "existing AP: %d (secondary: %d hw_mode: %s)",
++			   chan, info.sec_channel_offset,
++			   hostapd_hw_mode_txt(hw_mode));
++	}
++
+ 	switch (hostapd_check_chans(iface)) {
+ 	case HOSTAPD_CHAN_VALID:
+ 		return 0;
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 2a8459a..ab142a5 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2218,6 +2218,16 @@ struct external_auth {
+ };
+ 
+ /**
++ * struct wpa_channel_info - Information about channel
++ */
++struct wpa_channel_info {
++	u32 frequency;
++	int sec_channel_offset; /* 0 = HT40 disabled, -1 = HT40 enabled,
++				 * secondary channel below primary, 1 = HT40
++				 * enabled, secondary channel above primary */
++};
++
++/**
+  * struct wpa_driver_ops - Driver interface API definition
+  *
+  * This structure defines the API that each driver interface needs to implement
+@@ -3319,6 +3329,19 @@ struct wpa_driver_ops {
+ 			  int encrypt);
+ 
+ 	/**
++	 * shared_ap_freq - get operating frequency of shared AP interfaces(s)
++	 * @priv: Private driver interface data
++	 * @info: Shared AP channel info
++	 * Returns: 1 if shared AP was found, 0 if no shared AP is in operation
++	 * or -1 on failure
++	 *
++	 * This function is very similar to shared_freq() for AP interfaces,
++	 * but can also be used to detect APs operating within a different
++	 * instance of hostapd/wpa_supplicant.
++	 */
++	int (*shared_ap_freq)(void *priv, struct wpa_channel_info *info);
++
++	/**
+ 	 * get_noa - Get current Notice of Absence attribute payload
+ 	 * @priv: Private driver interface data
+ 	 * @buf: Buffer for returning NoA
+-- 
+1.9.1
+

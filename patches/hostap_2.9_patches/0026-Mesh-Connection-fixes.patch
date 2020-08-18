@@ -1,0 +1,64 @@
+From 346a44a26355b7f34660230e44c41a51f659c735 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Sun, 7 Feb 2016 01:15:53 -0800
+Subject: [PATCH 26/47] Mesh: Connection fixes
+
+1. For Mesh - updated ap's max_num_sta to the value of max_peer.
+   This value is used to decide if new connection can be created and is not
+   updated in the case of mesh.
+
+2. Upon receiving a beacon from a new MP, it is added to the driver before
+   deciding if connection can be initiated. If connection is not initiated,
+   the MP is not remoced from the driver.
+   fix is to add the new MP to driver only if decided to initiate connection.
+
+fixes #WILINK8_SW_DEV-468
+      #WILINK8_SW_DEV-467
+---
+ wpa_supplicant/mesh.c     | 2 ++
+ wpa_supplicant/mesh_mpm.c | 8 ++++----
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 2d02d7d..4b1053d 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -312,7 +312,9 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
+ 	bss->iconf = conf;
+ 	ifmsh->conf = conf;
+ 
++    /* set mesh max peer and ap max sta to the same value*/
+ 	ifmsh->bss[0]->max_plinks = wpa_s->conf->max_peer_links;
++    conf->bss[0]->max_num_sta = wpa_s->conf->max_peer_links;
+ 	ifmsh->bss[0]->dot11RSNASAERetransPeriod =
+ 		wpa_s->conf->dot11RSNASAERetransPeriod;
+ 	os_strlcpy(bss->conf->iface, wpa_s->ifname, sizeof(bss->conf->iface));
+diff --git a/wpa_supplicant/mesh_mpm.c b/wpa_supplicant/mesh_mpm.c
+index cc5d29c..c2c4981 100644
+--- a/wpa_supplicant/mesh_mpm.c
++++ b/wpa_supplicant/mesh_mpm.c
+@@ -807,10 +807,6 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 	struct ieee80211_mesh_config *mesh_conf_ie =
+ 		(struct ieee80211_mesh_config *)elems->mesh_config;
+ 
+-	sta = mesh_mpm_add_peer(wpa_s, addr, elems);
+-	if (!sta)
+-		return;
+-
+ 	/* check if peer accepts new connection. Don't initiate link if peer is full*/
+ 	if ((ssid && ssid->no_auto_peer &&
+ 	     (is_zero_ether_addr(data->mesh_required_peer) ||
+@@ -844,6 +840,10 @@ void wpa_mesh_new_mesh_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
+ 		return;
+ 	}
+ 
++	sta = mesh_mpm_add_peer(wpa_s, addr, elems);
++        if (!sta)
++                return;
++
+ 	if (conf->security == MESH_CONF_SEC_NONE) {
+ 		if (sta->plink_state < PLINK_OPN_SNT ||
+ 		    sta->plink_state > PLINK_ESTAB)
+-- 
+1.9.1
+

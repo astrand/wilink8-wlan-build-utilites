@@ -1,0 +1,114 @@
+From 2167c5f5f72a1ca9e8d21640220ab2469bb7a5a9 Mon Sep 17 00:00:00 2001
+From: Maxim Altshul <maxim.altshul@ti.com>
+Date: Tue, 15 Dec 2015 08:59:55 -0800
+Subject: [PATCH 01/18] mesh: mac80211 opcode, get rate for metric from driver
+
+Add a new opcode to allow a vendor report a rate directly
+from driver, to be used during metric calculation.
+
+A vendor that implements the opcode will have the ability
+to report rates directly to the mesh_hwmp module.
+
+Signed-off-by: Maxim Altshul <maxim.altshul@ti.com>
+---
+ include/net/mac80211.h    |  3 +++
+ net/mac80211/driver-ops.c | 13 +++++++++++++
+ net/mac80211/driver-ops.h |  5 +++++
+ net/mac80211/mesh_hwmp.c  | 18 +++++++++++++-----
+ 4 files changed, 34 insertions(+), 5 deletions(-)
+
+diff --git a/include/net/mac80211.h b/include/net/mac80211.h
+index 5790f55..8979d26 100644
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -3705,6 +3705,9 @@ struct ieee80211_ops {
+ 	void (*channel_switch)(struct ieee80211_hw *hw,
+ 			       struct ieee80211_vif *vif,
+ 			       struct ieee80211_channel_switch *ch_switch);
++	int (*mesh_get_mbps_estimation)(struct ieee80211_hw *hw,
++							struct ieee80211_sta *sta,
++							int *rate);
+ 	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant);
+ 	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant);
+ 
+diff --git a/net/mac80211/driver-ops.c b/net/mac80211/driver-ops.c
+index bb886e7..f39e78e 100644
+--- a/net/mac80211/driver-ops.c
++++ b/net/mac80211/driver-ops.c
+@@ -318,3 +318,16 @@ int drv_ampdu_action(struct ieee80211_local *local,
+ 
+ 	return ret;
+ }
++
++int drv_mesh_get_mbps_estimation(struct ieee80211_local *local,
++	       struct ieee80211_sta *sta,
++		   int *rate)
++{
++	int ret = -EOPNOTSUPP;
++
++	if (local->ops->mesh_get_mbps_estimation)
++		ret = local->ops->mesh_get_mbps_estimation(&local->hw, sta, rate);
++
++	return ret;
++}
++
+diff --git a/net/mac80211/driver-ops.h b/net/mac80211/driver-ops.h
+index 2123f6e..189db05 100644
+--- a/net/mac80211/driver-ops.h
++++ b/net/mac80211/driver-ops.h
+@@ -1255,4 +1255,9 @@ static inline void drv_del_nan_func(struct ieee80211_local *local,
+ 	trace_drv_return_void(local);
+ }
+ 
++int drv_mesh_get_mbps_estimation(struct ieee80211_local *local,
++	       struct ieee80211_sta *sta,
++		   int *rate);
++
++
+ #endif /* __MAC80211_DRIVER_OPS */
+diff --git a/net/mac80211/mesh_hwmp.c b/net/mac80211/mesh_hwmp.c
+index 6950cd0..0a1063a 100644
+--- a/net/mac80211/mesh_hwmp.c
++++ b/net/mac80211/mesh_hwmp.c
+@@ -12,6 +12,7 @@
+ #include <asm/unaligned.h>
+ #include "wme.h"
+ #include "mesh.h"
++#include "driver-ops.h"
+ 
+ #define TEST_FRAME_LEN	8192
+ #define MAX_METRIC	0xffffffff
+@@ -320,7 +321,7 @@ static u32 airtime_link_metric_get(struct ieee80211_local *local,
+ 	int device_constant = 1 << ARITH_SHIFT;
+ 	int test_frame_len = TEST_FRAME_LEN << ARITH_SHIFT;
+ 	int s_unit = 1 << ARITH_SHIFT;
+-	int rate, err;
++	int rate, err, ret;
+ 	u32 tx_time, estimated_retx;
+ 	u64 result;
+ 	unsigned long fail_avg =
+@@ -339,10 +340,17 @@ static u32 airtime_link_metric_get(struct ieee80211_local *local,
+ 		if (fail_avg > LINK_FAIL_THRESH)
+ 			return MAX_METRIC;
+ 
+-		sta_set_rate_info_tx(sta, &sta->tx_stats.last_rate, &rinfo);
+-		rate = cfg80211_calculate_bitrate(&rinfo);
+-		if (WARN_ON(!rate))
+-			return MAX_METRIC;
++	    sta_set_rate_info_tx(sta, &sta->tx_stats.last_rate, &rinfo);
++
++	    ret = drv_mesh_get_mbps_estimation(local, &sta->sta, &rate);
++	    /* if driver has no data for us or has no function
++	     * for this op, use original implementation
++	     */
++	    if (ret < 0)
++	    	rate = cfg80211_calculate_bitrate(&rinfo);
++
++	    if (WARN_ON(!rate))
++	    	return MAX_METRIC;
+ 
+ 		err = (fail_avg << ARITH_SHIFT) / 100;
+ 	}
+-- 
+1.9.1
+

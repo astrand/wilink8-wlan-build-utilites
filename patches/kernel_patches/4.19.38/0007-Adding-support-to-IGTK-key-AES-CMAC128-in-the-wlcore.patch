@@ -1,0 +1,52 @@
+From 4b1b7082cea543a417dafb417bbeaf5d73ff76de Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Wed, 15 Jan 2020 14:26:37 +0200
+Subject: [PATCH 07/18] Adding support to IGTK key - AES-CMAC128 in the wlcore
+ driver
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ drivers/net/wireless/ti/wlcore/cmd.h  | 1 +
+ drivers/net/wireless/ti/wlcore/main.c | 5 +++++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/net/wireless/ti/wlcore/cmd.h b/drivers/net/wireless/ti/wlcore/cmd.h
+index c27f1b5..c463001 100644
+--- a/drivers/net/wireless/ti/wlcore/cmd.h
++++ b/drivers/net/wireless/ti/wlcore/cmd.h
+@@ -472,6 +472,7 @@ enum wl1271_cmd_key_type {
+ 	KEY_TKIP = 2,
+ 	KEY_AES  = 3,
+ 	KEY_GEM  = 4,
++	KEY_IGTK = 5,
+ };
+ 
+ struct wl1271_cmd_set_keys {
+diff --git a/drivers/net/wireless/ti/wlcore/main.c b/drivers/net/wireless/ti/wlcore/main.c
+index d7563a8..d74e5bb 100644
+--- a/drivers/net/wireless/ti/wlcore/main.c
++++ b/drivers/net/wireless/ti/wlcore/main.c
+@@ -3554,6 +3554,9 @@ int wlcore_set_key(struct wl1271 *wl, enum set_key_cmd cmd,
+ 		key_type = KEY_TKIP;
+ 		key_conf->hw_key_idx = key_conf->keyidx;
+ 		break;
++	case WLAN_CIPHER_SUITE_AES_CMAC: //RazB - Adding IGTK
++	    key_type = KEY_IGTK;
++	    break;
+ 	case WLAN_CIPHER_SUITE_CCMP:
+ 		key_type = KEY_AES;
+ 		key_conf->flags |= IEEE80211_KEY_FLAG_PUT_IV_SPACE;
+@@ -6222,8 +6225,10 @@ static int wl1271_init_ieee80211(struct wl1271 *wl)
+ 		WLAN_CIPHER_SUITE_TKIP,
+ 		WLAN_CIPHER_SUITE_CCMP,
+ 		WL1271_CIPHER_SUITE_GEM,
++		WLAN_CIPHER_SUITE_AES_CMAC,
+ 	};
+ 
++    wl1271_debug(DEBUG_BOOT, "+++++++++++++++++++++++++++++++cipher_suites init++++++++++++++++++++++");
+ 	/* The tx descriptor buffer */
+ 	wl->hw->extra_tx_headroom = sizeof(struct wl1271_tx_hw_descr);
+ 
+-- 
+1.9.1
+

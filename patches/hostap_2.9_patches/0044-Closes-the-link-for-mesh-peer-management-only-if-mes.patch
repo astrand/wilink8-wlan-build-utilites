@@ -1,0 +1,43 @@
+From 185df1de795f3c940fccf79e8ca5d99c88c164d7 Mon Sep 17 00:00:00 2001
+From: Mathieu Audat <mathieu.audat@savoirfairelinux.com>
+Date: Thu, 16 Nov 2017 10:07:47 +0200
+Subject: [PATCH 44/47] Closes the link for mesh peer management only if mesh
+ is activated.
+
+This fixes the errror below:
+
+     events.c: In wpa_supplicant_:
+     events.c:4171:11: error: struct sta_info has no member 'plink_state'
+         if (sta->plink_state == PLINK_ESTAB)
+
+Signed-off-by: Mathieu Audat <mathieu.audat@savoirfairelinux.com>
+---
+ wpa_supplicant/events.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 22fdca6..4c3171e 100755
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -4929,6 +4929,7 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
+ 		if (wpa_s->ap_iface && data)
+ 			hostapd_event_sta_low_ack(wpa_s->ap_iface->bss[0],
+ 						  data->low_ack.addr);
++#ifdef CONFIG_MESH
+ 		if (wpa_s->ifmsh && data)
+ 		{
+ 			struct hostapd_data *hapd;
+@@ -4938,8 +4939,9 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
+ 			sta = ap_get_sta(hapd,data->low_ack.addr);
+ 
+ 			if (sta->plink_state == PLINK_ESTAB)
+-				mesh_mpm_plink_close(hapd,sta,wpa_s);		
++				mesh_mpm_plink_close(hapd,sta,wpa_s);
+ 		}
++#endif /* CONFIG_MESH */
+ #endif /* CONFIG_AP */
+ #ifdef CONFIG_TDLS
+ 		if (data)
+-- 
+1.9.1
+

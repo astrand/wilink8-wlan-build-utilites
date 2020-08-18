@@ -1,0 +1,47 @@
+From 8f1bb2e0b90b926bf6172e25dccba5c8f759a151 Mon Sep 17 00:00:00 2001
+From: Meirav Kama <meiravk@ti.com>
+Date: Wed, 20 Apr 2016 11:18:36 +0300
+Subject: [PATCH 14/18] mesh: max_peers reached falsely
+
+Issue happened when receiving delete_sta command without
+changing plink_state from ESTAB to HOLDING before.
+When receiving delete_sta command for mesh interface
+verify plink_state is not ESTAB and if so, decrease
+plink count and update beacon.
+
+Signed-off-by: Meirav Kama <meiravk@ti.com>
+---
+ net/mac80211/sta_info.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/net/mac80211/sta_info.c b/net/mac80211/sta_info.c
+index f342022..27792a8 100644
+--- a/net/mac80211/sta_info.c
++++ b/net/mac80211/sta_info.c
+@@ -1050,12 +1050,23 @@ int sta_info_destroy_addr_bss(struct ieee80211_sub_if_data *sdata,
+ {
+ 	struct sta_info *sta;
+ 	int ret;
++	bool dec_links = false;
+ 
+ 	mutex_lock(&sdata->local->sta_mtx);
+ 	sta = sta_info_get_bss(sdata, addr);
++
++	if (sdata->vif.type == NL80211_IFTYPE_MESH_POINT &&
++	    sta->mesh->plink_state == NL80211_PLINK_ESTAB)
++		dec_links = true;
++
+ 	ret = __sta_info_destroy(sta);
+ 	mutex_unlock(&sdata->local->sta_mtx);
+ 
++	if (dec_links) {
++		mesh_plink_dec_estab_count(sdata);
++		ieee80211_mbss_info_change_notify(sdata, BSS_CHANGED_BEACON);
++	}
++
+ 	return ret;
+ }
+ 
+-- 
+1.9.1
+

@@ -1,0 +1,35 @@
+From 9647385d4d3f1137629b0193a7f69b3bb4552c24 Mon Sep 17 00:00:00 2001
+From: Eyal Shapira <eyal@wizery.com>
+Date: Thu, 1 Mar 2012 14:01:44 +0200
+Subject: [PATCH 20/47] P2P: Ignore PBC overlap in P2P provisioning [IOP]
+
+PBC overlap can be ignored as the P2P client knows
+that it should connect to the P2P GO so no point of failing
+the WPS session in case of overlap because some other
+AP had WPS PBC on at the same time.
+---
+ wpa_supplicant/wps_supplicant.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/wpa_supplicant/wps_supplicant.c b/wpa_supplicant/wps_supplicant.c
+index 0579274..d482917 100644
+--- a/wpa_supplicant/wps_supplicant.c
++++ b/wpa_supplicant/wps_supplicant.c
+@@ -1813,6 +1813,14 @@ int wpas_wps_scan_pbc_overlap(struct wpa_supplicant *wpa_s,
+ 	if (!eap_is_wps_pbc_enrollee(&ssid->eap))
+ 		return 0;
+ 
++#ifdef CONFIG_P2P
++	if (wpa_s->p2p_in_provisioning) {
++		wpa_printf(MSG_DEBUG,
++			   "WPS: Don't check for PBC overlap in P2P");
++		return 0;
++	}
++#endif
++
+ 	wpa_printf(MSG_DEBUG, "WPS: Check whether PBC session overlap is "
+ 		   "present in scan results; selected BSSID " MACSTR,
+ 		   MAC2STR(selected->bssid));
+-- 
+1.9.1
+

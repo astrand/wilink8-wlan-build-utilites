@@ -1,0 +1,98 @@
+From 15314d3179e48b240021b56bba92b46fdd549c83 Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Wed, 26 Feb 2020 13:25:36 +0200
+Subject: [PATCH 23/47] P2P: fix duplicate structure patch
+
+wpa_channel_info stucture is duplicate in this version.
+This patch is remove the duplicate wpa_channel_info that added in hostapd: use new op to sync AP channels [AP AP] patch.
+In addition, this patch modified the calling to this structe with the right field.
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ src/ap/hw_features.c            |  4 ++--
+ src/drivers/driver.h            | 10 ----------
+ src/drivers/driver_nl80211.c    |  8 ++++----
+ wpa_supplicant/p2p_supplicant.c |  2 +-
+ 4 files changed, 7 insertions(+), 17 deletions(-)
+
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index bba2998..5ed8def 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -1284,10 +1284,10 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
+ 		}
+ 
+ 		iface->conf->channel = chan;
+-		iface->conf->secondary_channel = info.sec_channel_offset;
++		iface->conf->secondary_channel = info.sec_channel;
+ 		wpa_printf(MSG_DEBUG, "Channel automatically synced to "
+ 			   "existing AP: %d (secondary: %d hw_mode: %s)",
+-			   chan, info.sec_channel_offset,
++			   chan, info.sec_channel,
+ 			   hostapd_hw_mode_txt(hw_mode));
+ 	}
+ 
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index ab142a5..7d90b5a 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2218,16 +2218,6 @@ struct external_auth {
+ };
+ 
+ /**
+- * struct wpa_channel_info - Information about channel
+- */
+-struct wpa_channel_info {
+-	u32 frequency;
+-	int sec_channel_offset; /* 0 = HT40 disabled, -1 = HT40 enabled,
+-				 * secondary channel below primary, 1 = HT40
+-				 * enabled, secondary channel above primary */
+-};
+-
+-/**
+  * struct wpa_driver_ops - Driver interface API definition
+  *
+  * This structure defines the API that each driver interface needs to implement
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index df00a6e..e63141b 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -7899,18 +7899,18 @@ static int ap_freq_info_handler(struct nl_msg *msg, void *arg)
+ 
+ 	switch(nla_get_u32(tb[NL80211_ATTR_WIPHY_CHANNEL_TYPE])) {
+ 	case NL80211_CHAN_HT40MINUS:
+-		data->info->sec_channel_offset = -1;
++		data->info->sec_channel = -1;
+ 		break;
+ 	case NL80211_CHAN_HT40PLUS:
+-		data->info->sec_channel_offset = 1;
++		data->info->sec_channel = 1;
+ 		break;
+ 	default:
+-		data->info->sec_channel_offset = 0;
++		data->info->sec_channel = 0;
+ 		break;
+ 	}
+ 
+ 	wpa_printf(MSG_DEBUG, "nl80211: Got shared AP on freq %d sec chan: %d",
+-		   data->info->frequency, data->info->sec_channel_offset);
++		   data->info->frequency, data->info->sec_channel);
+ 
+ out:
+ 	return NL_SKIP;
+diff --git a/wpa_supplicant/p2p_supplicant.c b/wpa_supplicant/p2p_supplicant.c
+index 3ebe65b..303ee13 100755
+--- a/wpa_supplicant/p2p_supplicant.c
++++ b/wpa_supplicant/p2p_supplicant.c
+@@ -6011,7 +6011,7 @@ static int wpas_p2p_init_go_params(struct wpa_supplicant *wpa_s,
+         }
+ 
+         params->freq = info.frequency;
+-        params->ht40 = info.sec_channel_offset != 0; /* TODO: do we want it? */
++        params->ht40 = info.sec_channel != 0; /* TODO: do we want it? */
+         wpa_printf(MSG_DEBUG, "Channel automatically synced to "
+ 			"existing AP: %d (ht40=%d)", chan, ht40);
+         return 0;
+-- 
+1.9.1
+

@@ -1,0 +1,33 @@
+From 4cbeb13a8cc2ba286261ee82f54648b114c67d06 Mon Sep 17 00:00:00 2001
+From: Maital Hahn <maitalm@ti.com>
+Date: Tue, 19 Apr 2016 13:59:40 +0300
+Subject: [PATCH 36/47] mesh: Cannot perform scan on mesh IF while mesh is
+ connected with security
+
+In mesh IF, the wpa_s state was either SCANNING in non-secured connection
+or AUTHENTICATING in secured connection. The latter prevented the scan.
+Updated the wpa_s state in mesh IF to be COMPLETED upon init (same as P2P GO).
+
+Fixes #WILINK8_SW_DEV-547
+
+Signed-off-by: Maital Hahn <maitalm@ti.com>
+---
+ wpa_supplicant/mesh.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/wpa_supplicant/mesh.c b/wpa_supplicant/mesh.c
+index 8878138..125225b 100644
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -592,6 +592,8 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
+ 
+ 	ret = wpas_mesh_complete(wpa_s);
+ 
++	wpa_supplicant_set_state(wpa_s, WPA_COMPLETED);
++
+ out:
+ 	return ret;
+ }
+-- 
+1.9.1
+

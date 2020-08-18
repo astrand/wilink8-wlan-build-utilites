@@ -1,0 +1,84 @@
+From ac10ba7a53f1f239f4d05db7b942185b4b2a952b Mon Sep 17 00:00:00 2001
+From: Maital Hahn <maitalm@ti.com>
+Date: Sun, 18 Oct 2015 15:49:18 +0300
+Subject: [PATCH 03/18] ieee80211: mesh: handle secured PREQ frames
+
+Add handling of encrypted broadcast action frames (Group addressed privacy)
+Up until now all broadcast action frames and management were not encrypted.
+
+When we send Mesh path selection action frames we need to send a broadcast
+action frame which is encrypted.
+
+Change applied to tx.c file adding a case where we handle these specific cases
+which are defined in the spec in Table 8-38 Category values (Group addressed privacy)
+
+Code: 13 - Mesh
+Code: 14 - Multihop
+
+Signed-off-by: Chen Loewy <c-loewy@ti.com>
+Signed-off-by: Maital Hahn <maitalm@ti.com>
+---
+ include/linux/ieee80211.h | 19 +++++++++++++++++++
+ net/mac80211/tx.c         | 13 ++++++++++---
+ 2 files changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/ieee80211.h b/include/linux/ieee80211.h
+index 9c03a7d..af72952 100644
+--- a/include/linux/ieee80211.h
++++ b/include/linux/ieee80211.h
+@@ -3025,6 +3025,25 @@ static inline bool ieee80211_is_robust_mgmt_frame(struct sk_buff *skb)
+ 	return _ieee80211_is_robust_mgmt_frame((void *)skb->data);
+ }
+ 
++static inline bool ieee80211_is_not_group_privacy(struct ieee80211_hdr *hdr)
++{
++	if (ieee80211_is_action(hdr->frame_control)) {
++		u8 *category;
++
++		/*
++		 * Action frames, excluding Public Action frames, are Robust
++		 * Management Frames. However, if we are looking at a Protected
++		 * frame, skip the check since the data may be encrypted and
++		 * the frame has already been found to be a Robust Management
++		 * Frame (by the other end).
++		 */
++		category = ((u8 *)hdr) + 24;
++		return *category != WLAN_CATEGORY_MESH_ACTION &&
++			*category != WLAN_CATEGORY_MULTIHOP_ACTION;
++	}
++
++	return true;
++}
+ /**
+  * ieee80211_is_public_action - check if frame is a public action frame
+  * @hdr: the frame
+diff --git a/net/mac80211/tx.c b/net/mac80211/tx.c
+index 743cde6..ae38903 100644
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -468,12 +468,19 @@ ieee80211_tx_h_multicast_ps_buf(struct ieee80211_tx_data *tx)
+ static int ieee80211_use_mfp(__le16 fc, struct sta_info *sta,
+ 			     struct sk_buff *skb)
+ {
+-	if (!ieee80211_is_mgmt(fc))
+-		return 0;
+ 
+-	if (sta == NULL || !test_sta_flag(sta, WLAN_STA_MFP))
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++
++	if (!ieee80211_is_mgmt(fc))
+ 		return 0;
+ 
++	if (is_multicast_ether_addr(hdr->addr1)) {
++		if (!ieee80211_is_not_group_privacy(hdr))
++			return 1;
++	} else {
++		if (sta == NULL || !test_sta_flag(sta, WLAN_STA_MFP))
++			return 0;
++	}
+ 	if (!ieee80211_is_robust_mgmt_frame(skb))
+ 		return 0;
+ 
+-- 
+1.9.1
+

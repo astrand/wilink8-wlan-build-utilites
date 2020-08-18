@@ -1,0 +1,63 @@
+From e5fa09fa8c8121f73251526c0ec51491cd08478d Mon Sep 17 00:00:00 2001
+From: Arik Nemtsov <arik@wizery.com>
+Date: Sun, 25 Aug 2013 17:04:10 +0300
+Subject: [PATCH 06/47] hostapd: add hostapd.conf param to force AP channel
+ sync [AP AP]
+
+When ap_channel_sync=1 the 40Mhz operating channel of an AP will be
+set to the channel of an existing AP operating on the same PHY (NIC).
+
+Signed-off-by: Arik Nemtsov <arik@wizery.com>
+---
+ hostapd/config_file.c | 2 ++
+ hostapd/hostapd.conf  | 7 +++++++
+ src/ap/ap_config.h    | 2 ++
+ 3 files changed, 11 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index e09e6e1..9a1410d 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -4506,6 +4506,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		}
+ 		bss->mka_psk_set |= MKA_PSK_SET_CKN;
+ #endif /* CONFIG_MACSEC */
++	} else if (os_strcmp(buf, "ap_channel_sync") == 0) {
++		conf->ap_channel_sync = atoi(pos);
+ 	} else {
+ 		wpa_printf(MSG_ERROR,
+ 			   "Line %d: unknown configuration item '%s'",
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index ce3ecdd..40ddfbb 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -204,6 +204,13 @@ channel=1
+ # in cases where the driver supports DFS channels.
+ #acs_exclude_dfs=1
+ 
++# Sync channel to previous operational APs
++# (default: 0)
++# Set to 1 in order to sync the channel of the current AP to the
++# channel of an operational radio on the same PHY. Note that this
++# applies to the 40Mhz operating channel (primary + secondary)
++#ap_channel_sync=0
++
+ # Beacon interval in kus (1.024 ms) (default: 100; range 15..65535)
+ beacon_int=100
+ 
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index ea581a8..7d84a6a 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -1008,6 +1008,8 @@ struct hostapd_config {
+ 	unsigned int airtime_update_interval;
+ #define AIRTIME_MODE_MAX (__AIRTIME_MODE_MAX - 1)
+ #endif /* CONFIG_AIRTIME_POLICY */
++
++	int ap_channel_sync;
+ };
+ 
+ 
+-- 
+1.9.1
+

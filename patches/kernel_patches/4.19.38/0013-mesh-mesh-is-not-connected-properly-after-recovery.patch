@@ -1,0 +1,41 @@
+From 8c340189494cc832d3a2cdd94a2eee5ee4532de0 Mon Sep 17 00:00:00 2001
+From: Maital Hahn <maitalm@ti.com>
+Date: Sun, 13 Mar 2016 14:02:25 +0200
+Subject: [PATCH 13/18] mesh: mesh is not connected properly after recovery
+
+In the reconfigure process for mesh interface, moved the reconfiguration
+of the mesh peers to be done only after restarting the beacons,
+the same as it is done for AP.
+
+Signed-off-by: Maital Hahn <maitalm@ti.com>
+---
+ net/mac80211/util.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/net/mac80211/util.c b/net/mac80211/util.c
+index 33269e0..741d318 100644
+--- a/net/mac80211/util.c
++++ b/net/mac80211/util.c
+@@ -2028,6 +2028,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
+ 			ieee80211_reconfig_stations(sdata);
+ 			/* fall through */
+ 		case NL80211_IFTYPE_AP: /* AP stations are handled later */
++		case NL80211_IFTYPE_MESH_POINT: /* MP peers are handled later */
+ 			for (i = 0; i < IEEE80211_NUM_ACS; i++)
+ 				drv_conf_tx(local, sdata, i,
+ 					    &sdata->tx_conf[i]);
+@@ -2143,8 +2144,9 @@ int ieee80211_reconfig(struct ieee80211_local *local)
+ 		if (!sta->uploaded)
+ 			continue;
+ 
+-		if (sta->sdata->vif.type != NL80211_IFTYPE_AP &&
+-		    sta->sdata->vif.type != NL80211_IFTYPE_AP_VLAN)
++		if ((sta->sdata->vif.type != NL80211_IFTYPE_AP) &&
++            (sta->sdata->vif.type != NL80211_IFTYPE_AP_VLAN) &&
++		    (sta->sdata->vif.type != NL80211_IFTYPE_MESH_POINT))
+ 			continue;
+ 
+ 		for (state = IEEE80211_STA_NOTEXIST;
+-- 
+1.9.1
+

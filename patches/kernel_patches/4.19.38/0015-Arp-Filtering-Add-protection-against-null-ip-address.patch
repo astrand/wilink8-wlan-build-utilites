@@ -1,0 +1,35 @@
+From 39f65f4c98e268f1b63d102dde8dd12925d4eebe Mon Sep 17 00:00:00 2001
+From: Maxim Altshul <maxim.altshul@ti.com>
+Date: Mon, 2 May 2016 14:50:03 +0300
+Subject: [PATCH 15/18] Arp Filtering: Add protection against null ip address
+
+When configuring the arp filter command to FW,
+make sure that we do not configure and enable
+an invalid (0.0.0.0) ip address.
+
+Signed-off-by: Maxim Altshul <maxim.altshul@ti.com>
+Acked-by: Maital Hahn <maitalm@ti.com>
+---
+ drivers/net/wireless/ti/wlcore/acx.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/wlcore/acx.c b/drivers/net/wireless/ti/wlcore/acx.c
+index 7c83915..b87ad1c 100644
+--- a/drivers/net/wireless/ti/wlcore/acx.c
++++ b/drivers/net/wireless/ti/wlcore/acx.c
+@@ -1117,7 +1117,11 @@ int wl1271_acx_arp_ip_filter(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+ 
+ 	acx->role_id = wlvif->role_id;
+ 	acx->version = ACX_IPV4_VERSION;
+-	acx->enable = enable;
++
++	if (address)
++		acx->enable = enable;
++	else
++		acx->enable = 0;
+ 
+ 	if (enable)
+ 		memcpy(acx->address, &address, ACX_IPV4_ADDR_SIZE);
+-- 
+1.9.1
+

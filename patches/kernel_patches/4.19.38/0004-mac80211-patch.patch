@@ -1,0 +1,29 @@
+From 54e679fc504e6cfafa40ef564b308f96499aa1f4 Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Wed, 26 Feb 2020 17:21:33 +0200
+Subject: [PATCH 04/18] mac80211 patch
+
+remove  NL80211_FEATURE_FULL_AP_CLIENT_STATE
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ net/mac80211/main.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/net/mac80211/main.c b/net/mac80211/main.c
+index 68db2a3..57dde64 100644
+--- a/net/mac80211/main.c
++++ b/net/mac80211/main.c
+@@ -568,8 +568,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
+ 			   NL80211_FEATURE_HT_IBSS |
+ 			   NL80211_FEATURE_VIF_TXPOWER |
+ 			   NL80211_FEATURE_MAC_ON_CREATE |
+-			   NL80211_FEATURE_USERSPACE_MPM |
+-			   NL80211_FEATURE_FULL_AP_CLIENT_STATE;
++			   NL80211_FEATURE_USERSPACE_MPM;
+ 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_FILS_STA);
+ 	wiphy_ext_feature_set(wiphy,
+ 			      NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211);
+-- 
+1.9.1
+
