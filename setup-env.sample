@@ -9,25 +9,18 @@
 #===========================================================
 # User specific environment settings - use full PATH
 
-# if DEFAULT toolchain path is set toolchain will be downloaded to ./toolchain.
-export TOOLCHAIN_PATH=DEFAULT
+# TOOLCHAIN_PATH setting is mandatory. ex: TOOLCHAIN_PATH=/opt/ti-processor-sdk-linux-am335x-evm-06.00.00.07/linux-devkit/sysroots/x86_64-arago-linux
+export TOOLCHAIN_PATH=
 
-# if DEFAULT path to root filesystem is set ./fs folder will be used.
+# ./fs folder will be created if ROOTFS is set to DEFAULT 
 export ROOTFS=DEFAULT
 
-#if DEFAULT kernel path is set - kernel will be downloaded (set branch to match kernel version)
-export KERNEL_PATH=DEFAULT
+# KERNEL_PATH setting is mandatory. ex: KERNEL_PATH=/opt/ti-processor-sdk-linux-am335x-evm-06.00.00.07/board-support/linux-4.19.38+gitAUTOINC+4dae378bbe-g4dae378bbe
+export KERNEL_PATH=
 
-# if KERNEL_VARIANT below is set the build script will look for kernel specific
-# patches under the patches directory:
-# - patches under the pathces/driver_patches/$KERNEL_VARIANT directory would be
-#   applied during "modules" build.
-# - patches under the patches/kernel_patches/$/$KERNEL_VARIANT directory would
-#   be applied to the kernel pointed by KERNEL_PATH in case the "patch_kernel"
-#   command is used.
-#   Note: the kernel is not built automatically after the patches are applied
-export KERNEL_VARIANT=DEFAULT
-
+# CROSS_COMPILE setting is mandatory
 export CROSS_COMPILE=arm-linux-gnueabihf-
+
+# ARCH setting is mandarory 
 export ARCH=arm
-[ "$TOOLCHAIN_PATH" != "DEFAULT" ] && export PATH=$TOOLCHAIN_PATH:$PATH
+[ "$TOOLCHAIN_PATH" != "" ] && export PATH=$TOOLCHAIN_PATH:$PATH

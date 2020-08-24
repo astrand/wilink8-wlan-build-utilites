@@ -20,32 +20,35 @@ function usage ()
 {
     echo ""
     echo "This script build all/one of the relevent wl18xx software package."
-    echo "A web guide can be found here : http://processors.wiki.ti.com/index.php/WL18xx_System_Build_Scripts"
     echo ""
     echo "Usage : "
     echo ""
-    echo "Building full package : "
-    echo "        ./build_wl18xx.sh init         <head|TAG>  [ Download and Update w/o build  ] "
-    echo "                          update       <head|TAG>  [ Update to specific TAG & Build ] "
-    echo "                          clean                    [ Clean & Build                  ] "
-    echo "                          <empty>                  [ Build w/o update               ] "
-     echo "                         all_intree               [ Build driver and kernel intree ] " 
-    echo "                          check_updates            [ Check for build script updates ] "
+    echo "Building full package : Build all components except kernel,dtb "
+    echo "        ./build_wl18xx.sh init         	   	[ Download and Update w/o build  ] "
+    echo "                          update       R8.8        	[ Update to specific TAG & Build ] "
+    echo "                          clean                    	[ Clean & Build                  ] "
+    echo "                          check_updates            	[ Check for build script updates ] "
     echo ""
     echo "Building specific component :"
-    echo "                          hostapd                  [ Clean & Build hostapd          ] "
-    echo "                          wpa_supplicant           [ Clean & Build wpa_supplicant   ] "
-    echo "                          modules                  [ Clean & Build driver modules   ] "
-    echo "                          firmware                 [ Install firmware file          ] "
-    echo "                          scripts                  [ Install scripts                ] "
-    echo "                          utils                    [ Clean & Build scripts          ] "
-    echo "                          iw                       [ Clean & Build iw               ] "
-    echo "                          openssl                  [ Clean & Build openssll         ] "
-    echo "                          libnl                    [ Clean & Build libnl            ] "
-    echo "                          crda                     [ Clean & Build crda             ] "
-    echo "                          patch_kernel             [ Apply provided kernel patches  ] "
-    echo "                          uim                      [ Clean & Build uim              ] "
-    echo "                          bt-firmware              [ Install Bluetooth init scripts ] "
+    echo "                          hostapd                  	[ Clean & Build hostapd          ] "
+    echo "                          wpa_supplicant           	[ Clean & Build wpa_supplicant   ] "
+    echo "                          modules                  	[ Clean & Build driver modules   ] "
+    echo "                          firmware                 	[ Install firmware binary        ] "
+    echo "                          scripts                  	[ Install scripts                ] "
+    echo "                          utils                    	[ Clean & Build scripts          ] "
+    echo "                          iw                       	[ Clean & Build iw               ] "
+    echo "                          openssl                  	[ Clean & Build openssll         ] "
+    echo "                          libnl                    	[ Clean & Build libnl            ] "
+    echo "                          wireless-regdb           	[ Install wireless regdb   ] "
+    echo "                          patch_kernel             	[ Apply provided kernel patches  ] "
+    echo "                          kernel <defconfig filename> 	[ Clean & Build Kernel 	      ] "
+    echo "                          kernel_noclean <defconfig_filename>  	[ Build Kernel w/o clean  ] "
+    echo "                          patch_bbbe14_dts         	[Patch bbb black dts file to add e14 cape support] "
+    echo "                          bbbe14_dtb               	[Build bbb device tree file with e14 cape support] "
+
+
+
+
     exit 1
 }
 
@@ -132,6 +135,7 @@ function check_for_build_updates()
 function read_kernel_version()
 {
         filename=$KERNEL_PATH/Makefile
+	VERSION_STRING="VERSION = "
 
         if [ ! -f $filename ]
         then
@@ -141,15 +145,22 @@ function read_kernel_version()
             echo "No Makefile was found. Kernel version was set to default." 
         else 
             exec 6< $filename
-            read version <&6
-            read patchlevel <&6
-            read sublevel <&6
+	    read VERSION <&6
+	    version_parse=$(echo $VERSION|sed 's/[0-9]\+$//')
+	    while [ "$version_parse" != "${VERSION_STRING}" ]; do
+		read VERSION <&6
+		version_parse=$(echo $VERSION|sed 's/[0-9]\+$//')
+	    done			
+
+            read PATCHLEVEL <&6
+            read SUBLEVEL <&6
             exec 6<&-
 
-            KERNEL_VERSION=$(echo $version|sed 's/[^0-9]//g')
-            KERNEL_PATCHLEVEL=$(echo $patchlevel|sed 's/[^0-9]//g')
-            KERNEL_SUBLEVEL=$(echo $sublevel|sed 's/[^0-9]//g')
-            echo "Makefile was found. Kernel version was set to $KERNEL_VERSION.$KERNEL_PATCHLEVEL.$KERNEL_SUBLEVEL." 
+            KERNEL_VERSION=$(echo $VERSION|sed 's/[^0-9]//g')
+            KERNEL_PATCHLEVEL=$(echo $PATCHLEVEL|sed 's/[^0-9]//g')
+            KERNEL_SUBLEVEL=$(echo $SUBLEVEL|sed 's/[^0-9]//g')
+            
+	    echo "Makefile was found. Kernel version was set to $KERNEL_VERSION.$KERNEL_PATCHLEVEL.$KERNEL_SUBLEVEL." 
         fi
 	[ $VERIFY_CONFIG ] && ./verify_kernel_config.sh $KERNEL_PATH/.config
 }
@@ -157,9 +168,10 @@ function read_kernel_version()
 #----------------------------------------------------------j
 function setup_environment()
 {
+    print_highlight " *** Entering to create the setup environment based on setup-env file ....."
     if [ ! -e setup-env ]
     then
-        echo "No setup-env"
+        echo "******** No setup-env file found !! Exiting the script ***********************"
         exit 1
     fi
     
@@ -169,22 +181,21 @@ function setup_environment()
         echo " Changing ROOTFS path to $ROOTFS"
         set_path filesystem $ROOTFS
         [ ! -d $ROOTFS ] && echo "Error ROOTFS: $ROOTFS dir does not exist" && exit 1
-    fi   
-    #if no toolchain path is set - download it.
-    if [[ "$TOOLCHAIN_PATH" == "DEFAULT" ]]
+    fi
+ 
+    #if no toolchain path is set - exit 
+    if [[ "$TOOLCHAIN_PATH" == "" ]]
     then            
-        echo " Setting TOOLCHAIN_PATH path to default"
-        export TOOLCHAIN_PATH=`path toolchain`/arm/bin
-        DEFAULT_TOOLCHAIN=1
+        echo "Please set TOOLCHAIN_PATH in setupenv. Exiting !"
+        exit 
     fi   
 
 
-    #if no kernel path is set - download it.
-    if [[ "$KERNEL_PATH" == "DEFAULT" ]]
+    #if no kernel path is set - exit
+    if [[ "$KERNEL_PATH" == "" ]]
     then            
-        echo " Setting KERNEL_PATH path to default"
-        export KERNEL_PATH=`repo_path kernel`
-        DEFAULT_KERNEL=1
+        echo "Please set KERNEL_PATH in setupenv. Exiting ! "
+        exit 
     else 
         echo " Using user defined kernel"                        
         [ ! -d $KERNEL_PATH ] && echo "Error KERNEL_PATH: $KERNEL_PATH dir does not exist" && exit 1
@@ -196,7 +207,6 @@ function setup_environment()
 	export LIBNL_PATH=`repo_path libnl`	
 	export KLIB=`path filesystem`
 	export KLIB_BUILD=${KERNEL_PATH}
-	export GIT_TREE=`repo_path driver`
 	export PATH=$TOOLCHAIN_PATH:$PATH
     
 }
@@ -213,6 +223,7 @@ function setup_filesystem_skeleton()
 	mkdir -p `path filesystem`/usr/sbin/wlconf
 	mkdir -p `path filesystem`/usr/sbin/wlconf/official_inis
         mkdir -p `path filesystem`/etc/wireless-regdb/pubkeys
+	mkdir -p `path filesystem`/boot
 }
 
 function setup_directories()
@@ -264,138 +275,59 @@ function setup_branches()
 	done
 }
 
-function setup_toolchain()
+function build_zImage()
 {
-	if [ ! -f `path downloads`/arm-toolchain.tar.bz2 ]; then
-        echo "Setting toolchain"
-		wget ${toolchain[0]} -O `path downloads`/arm-toolchain.tar.bz2
-		tar -xjf `path downloads`/arm-toolchain.tar.bz2 -C `path toolchain`
-		mv `path toolchain`/* `path toolchain`/arm
+	if [ "$CLEAN_KERNEL" == "Y" ]|| [ "$CLEAN_KERNEL" == "y" ]
+	then
+		make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE mrproper
 	fi
+	
+	echo "Building Kernel"
+        make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE $1
+        make -j ${PROCESSORS_NUMBER} -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE  zImage
+        assert_no_error
+        install -d `path filesystem`/boot
+        cp  $KERNEL_PATH/arch/arm/boot/zImage `path filesystem`/boot
+        cp  $KERNEL_PATH/vmlinux `path filesystem`/boot
+        cp  $KERNEL_PATH/System.map `path filesystem`/boot
+        assert_no_error
 }
 
-function build_intree()
+function patch_bbbe14_dts()
 {
-	cd_repo driver
-	export KERNEL_PATH=`repo_path driver`
-	read_kernel_version
-	[ $CONFIG ] && cp `path configuration`/kernel_$KERNEL_VERSION.$KERNEL_PATCHLEVEL.config `repo_path driver`/.config
-	[ $CLEAN ] && make clean
-	[ $CLEAN ] && assert_no_error
-
-	make -j${PROCESSORS_NUMBER} zImage
-	make -j${PROCESSORS_NUMBER} am335x-evm.dtb
-	make -j${PROCESSORS_NUMBER} am335x-evm-wow.dtb
-	make -j${PROCESSORS_NUMBER} am335x-bone.dtb
-	make -j${PROCESSORS_NUMBER} am335x-boneblack.dtb
-	make -j${PROCESSORS_NUMBER} am335x-boneblack-e14-wl1837.dtb
-	make -j${PROCESSORS_NUMBER} am335x-boneblack-su-audio.dtb
-	make -j${PROCESSORS_NUMBER} am335x-boneblack-wl1835.dtb
-	make -j${PROCESSORS_NUMBER} modules
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} modules_install
-	cp `repo_path driver`/arch/arm/boot/zImage `path tftp`/zImage
-	cp `repo_path driver`/arch/arm/boot/dts/am335x-*.dtb `path tftp`/
-
-	assert_no_error
-
-	cd `path filesystem`
-	[ -f ../outputs/drv_skeleton.tar ] && rm ../outputs/drv_skeleton.tar
-	find ./ -name wl*.ko -exec tar rf ../outputs/drv_skeleton.tar {$1} \;
-	find ./ -name *80211*.ko -exec tar rf ../outputs/drv_skeleton.tar {$1} \;
-
-	cd_back
-}
-
-function rebuild_intree()
-{
-    cd_repo driver
-	export KERNEL_PATH=`repo_path driver`
-
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=net/wireless/ modules
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=net/wireless/ modules_install
-
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=net/mac80211/ modules
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=net/mac80211/ modules_install
-
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=drivers/net/wireless/ti/ modules
-	INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} M=drivers/net/wireless/ti/ modules_install
-
+	cd $KERNEL_PATH    
+	patch -p1  < $PATH__ROOT/patches/kernel_patches/beaglebone-wilink8-capes/Enable-TI-WiFi-Bluetooth-am335x-boneblack-WL1837.patch
 	assert_no_error
 	cd_back
 }
 
-function build_uimage()
+function bbbe14_dtb()
 {
-    cd_repo kernel
-	[ -z $NO_CONFIG ] && cp `path configuration`/kernel_$KERNEL_VERSION.$KERNEL_PATCHLEVEL.config `repo_path kernel`/.config
-	[ -z $NO_CLEAN ] && make clean
-	[ -z $NO_CLEAN ] && assert_no_error
+        make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE -j${PROCESSORS_NUMBER} am335x-boneblack.dtb
+        cp  $KERNEL_PATH/arch/arm/boot/dts/am335x-boneblack.dtb `path filesystem`/boot
+        assert_no_error
 
-    if [ "$KERNEL_VERSION" -eq 3 ] && [ "$KERNEL_PATCHLEVEL" -eq 2 ]
-    then
-        make -j${PROCESSORS_NUMBER} uImage
-        cp `repo_path kernel`/arch/arm/boot/uImage `path tftp`/uImage
-    else
-        if [ -z $NO_DTB ] 
-        then
-            make -j${PROCESSORS_NUMBER} zImage
-            make -j${PROCESSORS_NUMBER} am335x-evm.dtb
-            make -j${PROCESSORS_NUMBER} am335x-bone.dtb
-            make -j${PROCESSORS_NUMBER} am335x-boneblack.dtb
-	    make -j${PROCESSORS_NUMBER} modules
-	    INSTALL_MOD_PATH=`path filesystem` make -j${PROCESSORS_NUMBER} modules_install
-            cp `repo_path kernel`/arch/arm/boot/zImage `path tftp`/zImage
-            cp `repo_path kernel`/arch/arm/boot/dts/am335x-*.dtb `path tftp`/
-        else
-            LOADADDR=0x80008000 make -j${PROCESSORS_NUMBER} uImage.am335x-evm 
-            cp `repo_path kernel`/arch/arm/boot/uImage.am335x-evm `path tftp`/uImage
-        fi
-    fi
-	assert_no_error
-	cd_back
-}
-
-function generate_compat()
-{
-        cd_repo backports
-        python ./gentree.py --clean `repo_path driver` `path compat_wireless`
-        cd_back
 }
 
 function build_modules()
 {
-	generate_compat
-	cd_repo compat_wireless
-	if [ -n "$KERNEL_VARIANT" ] && [ -d "$PATH__ROOT/patches/driver_patches/$KERNEL_VARIANT" ]; then
-		for i in $PATH__ROOT/patches/driver_patches/$KERNEL_VARIANT/*.patch; do
-			print_highlight "Applying driver patch: $i"
-			patch -p1 < $i;
-			assert_no_error
-		done
-	fi
-	if [ -z $NO_CLEAN ]; then
-		make clean
-	fi
-	make defconfig-wl18xx
-	make -j${PROCESSORS_NUMBER}
+        make -j 2 -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE  modules clean
+	make -j 2 -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE  modules
 	assert_no_error
-	#find . -name \*.ko -exec cp {} `path debugging`/ \;
-	find . -name \*.ko -exec ${CROSS_COMPILE}strip -g {} \;
-    
-	make  modules_install
+        make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE INSTALL_MOD_PATH=`path filesystem` INSTALL_MOD_STRIP=1 modules_install
 	assert_no_error
-	cd_back
+	#cd_back
 }
 
 function build_openssl()
 {
 	cd_repo openssl
-	[ -z $NO_CONFIG ] && ./Configure linux-generic32
+	[ -z $NO_CONFIG ] && ./Configure linux-generic32 --prefix=`path filesystem`/usr/local
 	[ -z $NO_CLEAN ] && make clean
 	[ -z $NO_CLEAN ] && assert_no_error
 	make
 	assert_no_error
-	make install_sw
+	DESTDIR=`path filesystem` make install_sw
 	assert_no_error
 	cd_back
 }
@@ -412,6 +344,16 @@ function build_iw()
 	assert_no_error
 	cd_back
 }
+
+function build_wreg()
+{
+        cd_repo wireless_regdb 
+        DESTDIR=`path filesystem` make install
+        assert_no_error
+        cd_back
+}
+
+
 function build_libnl()
 {
 	cd_repo libnl
@@ -433,12 +375,13 @@ function build_wpa_supplicant()
     [ -n "$SYSLOG_EN" ] && echo "Enable DEBUG_SYSLOG config" && sed -i "/#CONFIG_DEBUG_SYSLOG=y/ s/# *//" .config
 	CONFIG_LIBNL32=y DESTDIR=`path filesystem` make clean
 	assert_no_error
-	CONFIG_LIBNL32=y DESTDIR=`path filesystem` CFLAGS+="-I`path filesystem`/usr/local/ssl/include -I`repo_path libnl`/include" LIBS+="-L`path filesystem`/lib -L`path filesystem`/usr/local/ssl/lib -lssl -lcrypto -lm -ldl -lpthread" LIBS_p+="-L`path filesystem`/lib -L`path filesystem`/usr/local/ssl/lib -lssl -lcrypto -lm -ldl -lpthread" make -j${PROCESSORS_NUMBER} CC=${CROSS_COMPILE}gcc LD=${CROSS_COMPILE}ld AR=${CROSS_COMPILE}ar
+	CONFIG_LIBNL32=y DESTDIR=`path filesystem` CFLAGS+="-I`path filesystem`/usr/local/ssl/include -I`path filesystem`/usr/local/include -I`repo_path libnl`/include" LIBS+="-L`path filesystem`/lib -L`path filesystem`/usr/local/lib -lssl -lcrypto -lm -ldl -lpthread" LIBS_p+="-L`path filesystem`/lib -L`path filesystem`/usr/local/ssl/lib -lssl -lcrypto -lm -ldl -lpthread" make -j${PROCESSORS_NUMBER} CC=${CROSS_COMPILE}gcc LD=${CROSS_COMPILE}ld AR=${CROSS_COMPILE}ar
 	assert_no_error
 	CONFIG_LIBNL32=y DESTDIR=`path filesystem` make install
 	assert_no_error
 	cd_back    
     cp `repo_path scripts_download`/conf/*_supplicant.conf  `path filesystem`/etc/
+    sudo mv `path filesystem`/usr/local/sbin/wpa* `path filesystem`/usr/sbin
 }
 
 function build_hostapd()
@@ -448,28 +391,15 @@ function build_hostapd()
 	[ -z $NO_UPNP ] && echo "Enable UPNP config" && sed -i "/#CONFIG_WPS_UPNP=y/ s/# *//" .config
 	CONFIG_LIBNL32=y DESTDIR=`path filesystem` make clean
 	assert_no_error
-	CONFIG_LIBNL32=y DESTDIR=`path filesystem` CFLAGS+="-I`path filesystem`/usr/local/ssl/include -I`repo_path libnl`/include" LIBS+="-L`path filesystem`/lib -L`path filesystem`/usr/local/ssl/lib -lssl -lcrypto -lm -ldl -lpthread" LIBS_p+="-L`path filesystem`/lib -L`path filesystem`/usr/local/ssl/lib -lssl -lcrypto -lm -ldl -lpthread" make -j${PROCESSORS_NUMBER} CC=${CROSS_COMPILE}gcc LD=${CROSS_COMPILE}ld AR=${CROSS_COMPILE}ar
+	CONFIG_LIBNL32=y DESTDIR=`path filesystem` CFLAGS+="-I`path filesystem`/usr/local/ssl/include  -I`path filesystem`/usr/local/include -I`repo_path libnl`/include" LIBS+="-L`path filesystem`/lib -L`path filesystem`/usr/local/lib -lssl -lcrypto -lm -ldl -lpthread" LIBS_p+="-L`path filesystem`/lib -L`path filesystem`/usr/local/lib -lssl -lcrypto -lm -ldl -lpthread" make -j${PROCESSORS_NUMBER} CC=${CROSS_COMPILE}gcc LD=${CROSS_COMPILE}ld AR=${CROSS_COMPILE}ar
 	assert_no_error
 	CONFIG_LIBNL32=y DESTDIR=`path filesystem` make install
 	assert_no_error
 	cd_back
     cp `repo_path scripts_download`/conf/hostapd.conf  `path filesystem`/etc/    
+    sudo mv `path filesystem`/usr/local/bin/host* `path filesystem`/usr/sbin
 }
 
-function build_crda()
-{	
-	cp `repo_path wireless_regdb`/regulatory.bin `path filesystem`/usr/lib/crda/regulatory.bin
-	cp `repo_path crda`/pubkeys/* `path filesystem`/etc/wireless-regdb/pubkeys/
-    cd_repo crda
-	
-	[ -z $NO_CLEAN ] && DESTDIR=`path filesystem` make clean
-	[ -z $NO_CLEAN ] && assert_no_error
-        PKG_CONFIG_LIBDIR="`path filesystem`/lib/pkgconfig" PKG_CONFIG_PATH="`path filesystem`/usr/local/ssl/lib/pkgconfig" DESTDIR=`path filesystem` CFLAGS+="-I`path filesystem`/usr/local/ssl/include -I`path filesystem`/include -L`path filesystem`/usr/local/ssl/lib -L`path filesystem`/lib" LDLIBS+=-lpthread V=1 USE_OPENSSL=1 make -j${PROCESSORS_NUMBER} all_noverify CC=${CROSS_COMPILE}gcc LD=${CROSS_COMPILE}ld AR=${CROSS_COMPILE}ar
-	assert_no_error
-        DESTDIR=`path filesystem` make install
-        assert_no_error
-	cd_back
-}
 
 function build_wl_logger()
 {
@@ -530,51 +460,35 @@ function build_fw_download()
 
 function patch_kernel()
 {
+
 	[ ! -d $KERNEL_PATH ] && echo "Error KERNEL_PATH: $KERNEL_PATH dir does not exist" && exit 1
-	cd $KERNEL_PATH
 	echo "using kernel: $KERNEL_PATH"
-	if [ -d "$PATH__ROOT/patches/kernel_patches/$KERNEL_VARIANT" ]; then
-		read -p "Branch name to use? (will be created if doesn't exist)" -e branchname
-		if git show-ref --verify --quiet "refs/heads/$branchname"; then
-			echo "Branch name $branchname already exists, trying to use it..."
-			git checkout $branchname
-		else
-			echo "Creating branch $branchname and switching to it"
-			git checkout -b $branchname
-		fi
-		assert_no_error
-		for i in $PATH__ROOT/patches/kernel_patches/$KERNEL_VARIANT/*.patch; do
-			git am $i;
-			assert_no_error
-		done
-	fi
+	read_kernel_version
+
+        read -p 'Kernel patches are based on Linux Kernel 4.19.38. Do you want to apply these patches to kernel mentioned in setupenv file  [y/n] : ' apply_patches
+
+        case $apply_patches in
+            "n") APPLY_KERNEL_PATCHES=0; echo "Patches NOT Applied, Exiting" ; exit;;
+            "N") APPLY_KERNEL_PATCHES=0; echo "Patches NOT Applied, Exiting" ; exit;;
+            "y") APPLY_KERNEL_PATCHES=1;;
+            "Y") APPLY_KERNEL_PATCHES=1;;
+            *) echo "Wrong Entry.Please enter y or n, Exiting ";APPLY_KERNEL_PATCHES=-1;exit;;
+        esac
+        echo "apply patches $APPLY_KERNEL_PATCHES"
+
+        echo "$KERNEL_PATH \n $KERNEL_VARIANT \n $PATH__ROOT/patches/kernel_patches/$KERNEL_VARIANT \n "
+
+        cd $KERNEL_PATH
+        if [ $APPLY_KERNEL_PATCHES -eq 1 ] && [ -d "$PATH__ROOT/patches/kernel_patches/4.19.38" ]; then
+                for i in $PATH__ROOT/patches/kernel_patches/4.19.38/*.patch; do
+                        print_highlight "Applying driver patch: $i"
+                        patch -p1 -N  < $i;
+                        assert_no_error
+                done
+        fi
+	
 	assert_no_error
 	cd_back
-}
-
-function build_uim()
-{
-	cd_repo uim
-	[ -z $NO_CLEAN ] && NFSROOT=`path filesystem` make clean
-	[ -z $NO_CLEAN ] && assert_no_error
-	make CC=${CROSS_COMPILE}gcc
-	assert_no_error
-        install -m 0755 uim `path filesystem`/usr/bin
-	install -m 0755 `repo_path uim`/scripts/uim-sysfs `path filesystem`/etc/init.d/
-	cd `path filesystem`/etc/rcS.d/
-	ln -sf  ../init.d/uim-sysfs S03uim-sysfs
-	assert_no_error
-	cd_back
-}
-
-function build_bt_firmware()
-{
-	cd_repo bt-firmware
-	for i in `repo_path bt-firmware`/initscripts/*.bts; do
-		echo "Installing bluetooth init script: $i"
-		install -m 0755 $i `path filesystem`/lib/firmware/
-		assert_no_error
-	done
 }
 
 function build_scripts_download()
@@ -590,12 +504,6 @@ function build_scripts_download()
 	cd_back
 }
 
-function clean_kernel()
-{
-	[ "$DEFAULT_KERNEL" ] && echo "Cleaning kernel folder"
-	[ "$DEFAULT_KERNEL" ] && cd_repo kernel
-	[ "$DEFAULT_KERNEL" ] && git clean -fdx > /dev/null
-}
 
 function clean_outputs()
 {
@@ -603,57 +511,9 @@ function clean_outputs()
     then
         echo "Cleaning outputs"
         rm -rf `path filesystem`/*
-        rm -f `path outputs`/*
    fi
 }
 
-function build_outputs()
-{
-	if [[ "$ROOTFS" == "DEFAULT" ]]
-    then  
-        echo "Building outputs"
-        cd_path filesystem
-        tar cpjf `path outputs`/${tar_filesystem[0]} .
-        cd_back
-		
-		# Copy kernel files only if default kernel is used(for now)
-		if [[ $DEFAULT_KERNEL -eq 1 ]]
-		then
-			if [ "$KERNEL_VERSION" -eq 3 ] && [ "$KERNEL_PATCHLEVEL" -eq 2 ]
-			then
-				cp `path tftp`/uImage `path outputs`/uImage
-			else
-				if [ -z $NO_DTB ]
-				then
-					cp `path tftp`/zImage `path outputs`/zImage
-					cp `path tftp`/*.dtb `path outputs`/
-				else
-					cp `path tftp`/uImage `path outputs`/uImage
-				fi
-			fi
-		fi
-    fi
-}
-
-function install_outputs()
-{
-    echo "Installing outputs"
-	tftp_path=${setup[2]}
-	sitara_left_path=${setup[5]}
-	sitara_right_path=${setup[8]}
-
-	cp `path outputs`/uImage ${tftp_path}
-	cp `path outputs`/${tar_filesystem[0]} $sitara_left_path
-	cp `path outputs`/${tar_filesystem[0]} $sitara_right_path
-
-	cd $sitara_left_path
-	tar xjf ${tar_filesystem[0]}
-	cd_back
-
-	cd $sitara_right_path
-	tar xjf ${tar_filesystem[0]}
-	cd_back
-}
 
 function set_files_to_verify()
 {
@@ -662,58 +522,12 @@ function set_files_to_verify()
         # source path
         # pattern in output of file
 
-        `path filesystem`/usr/local/sbin/wpa_supplicant
+        `path filesystem`/usr/sbin/wpa_supplicant
         `repo_path hostap`/wpa_supplicant/wpa_supplicant
         "ELF 32-bit LSB[ ]*executable, ARM"
 
-        `path filesystem`/usr/local/bin/hostapd
+        `path filesystem`/usr/sbin/hostapd
         `repo_path hostap`/hostapd/hostapd
-        "ELF 32-bit LSB[ ]*executable, ARM"
-
-        `path filesystem`/sbin/crda
-        `repo_path crda`/crda
-        "ELF 32-bit LSB[ ]*executable, ARM"
-
-        `path filesystem`/usr/lib/crda/regulatory.bin
-        `repo_path wireless_regdb`/regulatory.bin
-        "CRDA wireless regulatory database file"
-
-        `path filesystem`/lib/firmware/ti-connectivity/wl18xx-fw-4.bin
-        `repo_path fw_download`/wl18xx-fw-4.bin
-        "data"
-
-        `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/updates/drivers/net/wireless/ti/wl18xx/wl18xx.ko
-        `path compat_wireless`/drivers/net/wireless/ti/wl18xx/wl18xx.ko
-        "ELF 32-bit LSB[ ]*relocatable, ARM"
-
-        `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/updates/drivers/net/wireless/ti/wlcore/wlcore.ko
-        `path compat_wireless`/drivers/net/wireless/ti/wlcore/wlcore.ko
-        "ELF 32-bit LSB[ ]*relocatable, ARM"
-
-        #`path filesystem`/usr/bin/calibrator
-        #`repo_path ti_utils`/calibrator
-        #"ELF 32-bit LSB[ ]*executable, ARM"
-
-        `path filesystem`/usr/sbin/wlconf/wlconf
-        `repo_path ti_utils`/wlconf/wlconf
-        "ELF 32-bit LSB[ ]*executable, ARM"
-        )
-
-		[ $INTREE ] && files_to_verify=(
-        # skeleton path
-        # source path
-        # pattern in output of file
-
-        `path filesystem`/usr/local/sbin/wpa_supplicant
-        `repo_path hostap`/wpa_supplicant/wpa_supplicant
-        "ELF 32-bit LSB[ ]*executable, ARM"
-
-        `path filesystem`/usr/local/bin/hostapd
-        `repo_path hostap`/hostapd/hostapd
-        "ELF 32-bit LSB[ ]*executable, ARM"
-
-        `path filesystem`/sbin/crda
-        `repo_path crda`/crda
         "ELF 32-bit LSB[ ]*executable, ARM"
 
         `path filesystem`/usr/lib/crda/regulatory.bin
@@ -725,11 +539,13 @@ function set_files_to_verify()
         "data"
 
         `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/kernel/drivers/net/wireless/ti/wl18xx/wl18xx.ko
-        `repo_path driver`/drivers/net/wireless/ti/wl18xx/wl18xx.ko
+        `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/kernel/drivers/net/wireless/ti/wl18xx/wl18xx.ko
+
         "ELF 32-bit LSB[ ]*relocatable, ARM"
 
         `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/kernel/drivers/net/wireless/ti/wlcore/wlcore.ko
-        `repo_path driver`/drivers/net/wireless/ti/wlcore/wlcore.ko
+        `path filesystem`/lib/modules/$KERNEL_VERSION.$KERNEL_PATCHLEVEL.*/kernel/drivers/net/wireless/ti/wlcore/wlcore.ko
+
         "ELF 32-bit LSB[ ]*relocatable, ARM"
 
         #`path filesystem`/usr/bin/calibrator
@@ -739,8 +555,7 @@ function set_files_to_verify()
         `path filesystem`/usr/sbin/wlconf/wlconf
         `repo_path ti_utils`/wlconf/wlconf
         "ELF 32-bit LSB[ ]*executable, ARM"
-        ) 
-
+        )
 }
 
 function get_tag()
@@ -755,7 +570,7 @@ function get_tag()
         if [[ "$url" == *git.ti.com* ]]
         then
                 echo -e "${PURPLE}Describe of ${NORMAL} repo : ${GREEN}$name ${NORMAL} "  ;
-                git describe
+                git describe --tag
         fi
                cd_back
                i=$[$i + 3]
@@ -819,7 +634,7 @@ function verify_skeleton()
 		fi
 		i=$[$i + 3]
 	done
-
+: '
 	which regdbdump > /dev/null
 	if [ $? -eq 0 ]; then
 		regdbdump `path filesystem`/usr/lib/crda/regulatory.bin > /dev/null
@@ -827,6 +642,7 @@ function verify_skeleton()
        			echo "Please update your public key used to verify the DB"
        		fi
 	fi
+'
 }
 
 function verify_installs()
@@ -860,25 +676,15 @@ function setup_workspace()
 	setup_repositories
 	setup_branches
     verify_installs
-    #Download toolchain only if it was not set
-    [ DEFAULT_TOOLCHAIN ] && setup_toolchain   
 }
 
 
 function build_all()
 {
-    if [ -z $NO_EXTERNAL ] 
-    then        
-        [ -z $INTREE ] && [ $DEFAULT_KERNEL ] && build_uimage
         build_openssl
         build_libnl
-        build_crda
-    fi
-    
-    if [ -z $NO_TI ] 
-    then
-        [ -z $INTREE ] && build_modules
-		[ $INTREE ] && build_intree
+        build_wreg
+        build_modules
         build_iw
         build_wpa_supplicant
         build_hostapd	
@@ -887,9 +693,6 @@ function build_all()
         build_wlconf
         build_fw_download
         build_scripts_download
-        build_uim
-        build_bt_firmware
-    fi
     
     [ -z $NO_VERIFY ] && verify_skeleton
 }
@@ -939,53 +742,48 @@ function main()
         read_kernel_version #####read kernel version again after update#####
         [[ -z $NO_BUILD ]] && build_all
 		;;
-        
-		'openlink')
-        print_highlight " building all (w/o clean) "       
-		NO_EXTERNAL=1 setup_and_build
-		;;
 
         #################### Building single components #############################
 		'kernel')
 		print_highlight " building only Kernel "
-        #clean_kernel
-		build_uimage
+                CLEAN_KERNEL="Y" 
+		build_zImage $2
 		;;
 
-		'intree')
-		print_highlight " building modules intree"
-		build_intree
+        	'kernel_noclean')
+        	print_highlight " building kernel without cleaning "
+		CLEAN_KERNEL="N"
+        	build_zImage $2
 		;;
 		
-		'intree_m')
-		print_highlight " Building JUST wireless modules intree"
-		rebuild_intree
+		'patch_bbbe14_dts')
+		print_highlight " patching beagblebone black dts file to include support for e14 wireless cape"
+		patch_bbbe14_dts
 		;;
 
-        'kernel_modules')
-        print_highlight " building kernel and driver modules"
-        build_uimage
-		build_modules
+		'bbbe14_dtb')
+		print_highlight " building beaglebone black device tree file with e14 wireless cape support "
+		bbbe14_dtb
 		;;
 
 		'modules')
-        print_highlight " building only Driver modules "
+                print_highlight " building only Driver modules "
 		build_modules
 		;;
 
 		'wpa_supplicant')
-        print_highlight " building only wpa_supplicant "
+                print_highlight " building only wpa_supplicant "
 		build_wpa_supplicant      
 		;;
 
 		'hostapd')
-        print_highlight " building only hostapd "
+                print_highlight " building only hostapd "
 		build_hostapd
 		;;
 
-		'crda')
-		print_highlight " building only CRDA "
-		build_crda
+		'wireless-regdb')
+		print_highlight " building only wireless regulatory database "
+		build_wreg
 		;;
         
 		'libnl')
@@ -1017,8 +815,8 @@ function main()
 
 		'all_hostap')
                 print_highlight " building hostap and dependencies "
-                build_libnl
                 build_openssl
+		build_libnl
                 build_wpa_supplicant
 		build_hostapd
                 ;; 
@@ -1034,15 +832,6 @@ function main()
 		patch_kernel
 		;;
 
-		'uim')
-		print_highlight " building only uim "
-		build_uim
-		;;
-
-		'bt-firmware')
-		print_highlight " Only installing bluetooth init scripts "
-		build_bt_firmware
-		;;
         ############################################################
         'get_tag')
         get_tag
@@ -1057,17 +846,6 @@ function main()
 		check_for_build_updates
 		;;
 
-        '')
-        print_highlight " building all (No clean & no source code update) "  
-		#clean_outputs
-        NO_CLEAN=1 build_all
-		;;
-
-		'all_intree')
-        print_highlight " building all (in-tree) (No clean & no source code update) "
-		#clean_outputs
-        INTREE=1 build_all
-		;;
         *)
         echo " "
         echo "**** Unknown parameter - please see usage below **** "
@@ -1075,8 +853,6 @@ function main()
         ;;
 	esac
 	
-	[[ -z $NO_BUILD ]] && build_outputs
-	[[ -n $INSTALL_NFS ]] && install_outputs
 	echo "Wifi Package Build Successful"
 }
 main $@

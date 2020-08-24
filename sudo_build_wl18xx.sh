@@ -7,8 +7,9 @@ SUDO_PREFIX="sudo "
 
 makeregex[1]="modules_install"
 makeregex[2]="make install"
+makeregex[3]="install -d"
 
-for i in {1..2}
+for i in {1..3}
 do
     #echo "Add 'sudo' for $i) ${makeregex[$i]}"
     sed -i "/${makeregex[$i]}/s/^/${MAKE_PREFIX} /" ./$SUDO_FILENAME
