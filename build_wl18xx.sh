@@ -281,7 +281,6 @@ function build_zImage()
 	then
 		make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE mrproper
 	fi
-	
 	echo "Building Kernel"
         make -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE $1
         make -j ${PROCESSORS_NUMBER} -C $KERNEL_PATH ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE  zImage
@@ -510,8 +509,12 @@ function clean_outputs()
     if [[ "$ROOTFS" == "DEFAULT" ]]
     then
         echo "Cleaning outputs"
-        rm -rf `path filesystem`/*
-   fi
+        cp -r `path filesystem`/boot ./boot_temp
+	rm -rf `path filesystem`/*
+        cp -r ./boot_temp `path filesystem`/boot
+	rm -r boot_temp
+
+    fi
 }
 
 
@@ -675,7 +678,7 @@ function setup_workspace()
 	setup_directories	
 	setup_repositories
 	setup_branches
-    verify_installs
+        verify_installs
 }
 
 
