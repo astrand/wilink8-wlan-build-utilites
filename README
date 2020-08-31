@@ -1,3 +1,97 @@
-This repository contains the build scripts required to build Wilik8 with different configurations/kernels
+This instructions are for release R8.8
 
-Start with ./build_wl18xx.sh -h
+Instructions are based on Reference TI Sitara AM335x SDK : https://software-dl.ti.com/processor-sdk-linux/esd/AM335X/06_00_00_07/index_FDS.html
+
+1) Install AM335x Sitara SDK : https://software-dl.ti.com/processor-sdk-linux/esd/AM335X/06_00_00_07/index_FDS.html
+
+2) Clone Build Utilities : 
+
+git clone git://git.ti.com/wilink8-wlan/build-utilites.git
+
+3) Checkout r8.8 branch:
+
+git checkout r8.8
+
+4) Setup setup-env file
+
+cp setup-env.sample setup-env
+
+Set KERNEL_PATH, TOOLCHAIN_PATH etc. variables in setup-env file
+
+5) Initialize the repo
+
+cd build-utilites/
+./build_wl18xx.sh init
+
+
+6) Run verify kernel configuration script to check/enable kernel configuration.
+
+example:
+./verify_kernel_config.sh /opt/ti-processor-sdk-linux-am335x-evm-06.00.00.07/board-support/linux-4.19.38+gitAUTOINC+4dae378bbe-g4dae378bbe/arch/arm/configs/tisdk_am335x-evm_defconfig 
+
+
+7) Apply kernel patches:
+
+./build_wl18xx.sh patch_kernel
+
+( Script will prompt user before applying patches. Input Y to confirm ) 
+
+
+8) Build Kernel 
+
+User may build the kernel from SDK directly or use build script to build the kernel. kernel defconfig filename is passed as an argument
+
+example:
+
+./build_wl18xx.sh kernel tisdk_am335x-evm_defconfig
+
+
+9) Patch Beaglebone black dts file to add support for element 14 wireless cape with WL1837MOD ( optional )
+
+./build_wl18xx.sh patch_bbbe14_dts
+
+
+10) Build Beaglebone black dtb with element 14 wireless cape support (optional)
+
+./build_wl18xx.sh bbbe14_dtb
+
+
+11) Build all other R8.8 components : wl8 kernel modules, wpa_supplicant, hostapd etc.
+
+./build_wl18xx.sh update R8.8
+
+
+12) In case ROOTFS ( in setup-env) is set to "DEFAULT", copy built binaries from ./fs/ to target file system 
+
+
+13) To build R8.8 components individually , run help command for more details
+
+./build_wl18xx.sh --help 
+
+This script builds all/one of the relevent wl18xx software package.
+
+Usage : 
+
+Building full package : Build all components except kernel,dtb 
+        ./build_wl18xx.sh init                   [ Download and Update w/o build  ] 
+                          update       R8.8        [ Update to specific TAG & Build ] 
+                          clean                           [ Clean & Build                  ] 
+                          check_updates                   [ Check for build script updates ] 
+
+Building specific component :
+                          hostapd                         [ Clean & Build hostapd          ] 
+                          wpa_supplicant                  [ Clean & Build wpa_supplicant   ] 
+                          modules                         [ Clean & Build driver modules   ] 
+                          firmware                        [ Install firmware binary        ] 
+                          scripts                         [ Install scripts                ] 
+                          utils                           [ Clean & Build scripts          ] 
+                          iw                              [ Clean & Build iw               ] 
+                          openssl                         [ Clean & Build openssll         ] 
+                          libnl                           [ Clean & Build libnl            ] 
+                          wireless-regdb                  [ Install wireless regdb   ] 
+                          patch_kernel                    [ Apply provided kernel patches  ] 
+                          kernel <defconfig filename>       [ Clean & Build Kernel       ] 
+                          kernel_noclean <defconfig_filename>       [ Build Kernel w/o clean  ] 
+                          patch_bbbe14_dts           [Patch bbb black dts file to add e14 cape support] 
+                          bbbe14_dtb                      [Build bbb device tree file with e14 cape support] 
+

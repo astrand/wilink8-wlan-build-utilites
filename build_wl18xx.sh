@@ -19,7 +19,7 @@ function print_highlight()
 function usage ()
 {
     echo ""
-    echo "This script build all/one of the relevent wl18xx software package."
+    echo "This script builds all/one of the relevent wl18xx software package."
     echo ""
     echo "Usage : "
     echo ""
