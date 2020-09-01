@@ -9,7 +9,7 @@
 #===========================================================
 # User specific environment settings - use full PATH
 
-# TOOLCHAIN_PATH setting is mandatory. ex: TOOLCHAIN_PATH=/opt/ti-processor-sdk-linux-am335x-evm-06.00.00.07/linux-devkit/sysroots/x86_64-arago-linux
+# TOOLCHAIN_PATH setting is mandatory. ex: TOOLCHAIN_PATH=/opt/ti-processor-sdk-linux-am335x-evm-06.00.00.07/linux-devkit/sysroots/x86_64-arago-linux/usr/bin
 export TOOLCHAIN_PATH=
 
 # ./fs folder will be created if ROOTFS is set to DEFAULT 
