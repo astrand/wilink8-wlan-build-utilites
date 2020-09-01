@@ -380,7 +380,7 @@ function build_wpa_supplicant()
 	assert_no_error
 	cd_back    
     cp `repo_path scripts_download`/conf/*_supplicant.conf  `path filesystem`/etc/
-    sudo mv `path filesystem`/usr/local/sbin/wpa* `path filesystem`/usr/sbin
+    mv `path filesystem`/usr/local/sbin/wpa* `path filesystem`/usr/sbin
 }
 
 function build_hostapd()
@@ -396,7 +396,7 @@ function build_hostapd()
 	assert_no_error
 	cd_back
     cp `repo_path scripts_download`/conf/hostapd.conf  `path filesystem`/etc/    
-    sudo mv `path filesystem`/usr/local/bin/host* `path filesystem`/usr/sbin
+     mv `path filesystem`/usr/local/bin/host* `path filesystem`/usr/sbin
 }
 
 
