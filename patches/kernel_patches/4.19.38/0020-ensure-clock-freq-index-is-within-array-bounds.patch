@@ -1,0 +1,26 @@
+From 0237f4891e24228ae763c3a67768d4cb13779161 Mon Sep 17 00:00:00 2001
+From: saurabh narang <saurabhnarang@ti.com>
+Date: Tue, 1 Sep 2020 15:55:30 -0500
+Subject: [PATCH 20/21] ensure clock freq index is within array bounds
+
+Signed-off-by: saurabh narang <saurabhnarang@ti.com>
+---
+ drivers/net/wireless/ti/wl18xx/main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/wl18xx/main.c b/drivers/net/wireless/ti/wl18xx/main.c
+index f230c28..1032a2f 100644
+--- a/drivers/net/wireless/ti/wl18xx/main.c
++++ b/drivers/net/wireless/ti/wl18xx/main.c
+@@ -733,7 +733,7 @@ static int wl18xx_set_clk(struct wl1271 *wl)
+ 	/* TODO: PG2: apparently we need to read the clk type */
+ 
+ 	ret = wl18xx_top_reg_read(wl, PRIMARY_CLK_DETECT, &clk_freq);
+-	if (ret < 0)
++	if (ret < 0 || clk_freq < 0 || clk_freq >= NUM_CLOCK_CONFIGS)
+ 		goto out;
+ 
+ 	wl1271_debug(DEBUG_BOOT, "clock freq %d (%d, %d, %d, %d, %s)", clk_freq,
+-- 
+1.9.1
+

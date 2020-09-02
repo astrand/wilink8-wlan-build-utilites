@@ -1,0 +1,84 @@
+From 9a97ad88468662d96763baea4f35fbb4fe85baa6 Mon Sep 17 00:00:00 2001
+From: saurabh narang <saurabhnarang@ti.com>
+Date: Tue, 1 Sep 2020 15:37:08 -0500
+Subject: [PATCH 19/21] print debug info depending upon received pkt type
+
+Signed-off-by: saurabh narang <saurabhnarang@ti.com>
+---
+ drivers/net/wireless/ti/wlcore/rx.c | 44 ++++++++++++++++++++++++++++++++-----
+ 1 file changed, 38 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/wireless/ti/wlcore/rx.c b/drivers/net/wireless/ti/wlcore/rx.c
+index 078a494..30253d0 100644
+--- a/drivers/net/wireless/ti/wlcore/rx.c
++++ b/drivers/net/wireless/ti/wlcore/rx.c
+@@ -120,6 +120,7 @@ static int wl1271_rx_handle_data(struct wl1271 *wl, u8 *data, u32 length,
+ 	struct wl1271_rx_descriptor *desc;
+ 	struct sk_buff *skb;
+ 	struct ieee80211_hdr *hdr;
++	struct ieee80211_bar *bar;
+ 	u8 beacon = 0;
+ 	u8 is_data = 0;
+ 	u8 reserved = 0, offset_to_data = 0;
+@@ -189,21 +190,52 @@ static int wl1271_rx_handle_data(struct wl1271 *wl, u8 *data, u32 length,
+ 	*hlid = desc->hlid;
+ 
+ 	hdr = (struct ieee80211_hdr *)skb->data;
++	bar = (struct ieee80211_bar *)skb->data;
++
++	//IS the frame a Beacon
+ 	if (ieee80211_is_beacon(hdr->frame_control))
++	{
+ 		beacon = 1;
++	seq_num = (le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_SEQ) >> 4;
++	wl1271_debug(DEBUG_RX, "Beacon - rx skb 0x%p: %d seq %d hlid %d", skb,
++		     skb->len - desc->pad_len,
++		     seq_num, *hlid);
++	}
++	//Is the frame a Data frame
+ 	if (ieee80211_is_data_present(hdr->frame_control))
++	{
+ 		is_data = 1;
++	seq_num = (le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_SEQ) >> 4;
++	wl1271_debug(DEBUG_RX, "Data - rx skb 0x%p: %d seq %d hlid %d", skb,
++		     skb->len - desc->pad_len,
++		     seq_num, *hlid);
++	}	
++	//Is the frame a Control Frame
++	if (ieee80211_is_ctl(hdr->frame_control))
++	{
++		//Only Print debug info for BAR Frames
++		if(ieee80211_is_back_req(hdr->frame_control))
++		{
++			seq_num = (le16_to_cpu(bar->start_seq_num) & IEEE80211_SCTL_SEQ) >> 4;
++		wl1271_debug(DEBUG_RX, "BAR - rx skb 0x%p: %d start_seq %d hlid %d", skb,
++			     skb->len - desc->pad_len,
++			     seq_num, *hlid);
++		}	
++	}
++	//Is the frame a Management Frame
++	if ( ieee80211_is_mgmt(hdr->frame_control))
++	{
++		seq_num = (le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_SEQ) >> 4;
++		wl1271_debug(DEBUG_RX, "MGMT - rx skb 0x%p: %d seq %d hlid %d", skb,
++			     skb->len - desc->pad_len,
++			     seq_num, *hlid);
++	}
++
+ 
+ 	wl1271_rx_status(wl, desc, IEEE80211_SKB_RXCB(skb), beacon,
+ 			 ieee80211_is_probe_resp(hdr->frame_control));
+ 	wlcore_hw_set_rx_csum(wl, desc, skb);
+ 
+-	seq_num = (le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_SEQ) >> 4;
+-	wl1271_debug(DEBUG_RX, "rx skb 0x%p: %d B %s seq %d hlid %d", skb,
+-		     skb->len - desc->pad_len,
+-		     beacon ? "beacon" : "",
+-		     seq_num, *hlid);
+-
+ 	skb_queue_tail(&wl->deferred_rx_queue, skb);
+ 	queue_work(wl->freezable_wq, &wl->netstack_work);
+ 
+-- 
+1.9.1
+

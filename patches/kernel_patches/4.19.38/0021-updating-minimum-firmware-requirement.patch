@@ -1,0 +1,34 @@
+From a124343d21ef5d24c1febf7dce3189b15d9c8f1d Mon Sep 17 00:00:00 2001
+From: RazB <r-Bouganim@ti.com>
+Date: Tue, 1 Sep 2020 17:07:14 -0500
+Subject: [PATCH 21/21] updating minimum firmware requirement
+
+This patch mandates the driver to work with firmware version
+8.9.0.0.83 or above.
+This is to fix kernel panic caused by establishing a PMF/WPA3
+connection using older firmware versions
+
+Latest firmware is available at:
+git://git.ti.com/wilink8-wlan/wl18xx_fw.git
+
+Signed-off-by: RazB <r-Bouganim@ti.com>
+---
+ drivers/net/wireless/ti/wl18xx/wl18xx.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/wl18xx/wl18xx.h b/drivers/net/wireless/ti/wl18xx/wl18xx.h
+index 5371cbd..5c4e8bd 100644
+--- a/drivers/net/wireless/ti/wl18xx/wl18xx.h
++++ b/drivers/net/wireless/ti/wl18xx/wl18xx.h
+@@ -29,7 +29,7 @@
+ #define WL18XX_IFTYPE_VER	9
+ #define WL18XX_MAJOR_VER	WLCORE_FW_VER_IGNORE
+ #define WL18XX_SUBTYPE_VER	WLCORE_FW_VER_IGNORE
+-#define WL18XX_MINOR_VER	58
++#define WL18XX_MINOR_VER	83
+ 
+ #define WL18XX_CMD_MAX_SIZE          740
+ 
+-- 
+1.9.1
+
