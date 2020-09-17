@@ -3,9 +3,9 @@
 #========================oOO==(_)==OOo=======================
 # This file contains the exports needed for automating the
 # build process of WLAN components.
-# Place this file in the same directory with wl18xx_build.sh
-# build scripts. No need to run 'source setup-env', the build
-# scripts will perfom it internaly. 
+# Place this file in the same directory with build_wl18xx.sh
+# No need to run 'source setup-env', the build
+# scripts will perform it internally.
 #===========================================================
 # User specific environment settings - use full PATH
 
@@ -21,6 +21,6 @@ export KERNEL_PATH=
 # CROSS_COMPILE setting is mandatory
 export CROSS_COMPILE=arm-linux-gnueabihf-
 
-# ARCH setting is mandarory 
+# ARCH setting is mandatory
 export ARCH=arm
 [ "$TOOLCHAIN_PATH" != "" ] && export PATH=$TOOLCHAIN_PATH:$PATH
