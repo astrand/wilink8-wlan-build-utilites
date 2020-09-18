@@ -1,20 +1,28 @@
-From e1b204f36a71f841e96978dda89d9536c8c291e8 Mon Sep 17 00:00:00 2001
+From eb8d670699401c21275652622f5785912050ad9a Mon Sep 17 00:00:00 2001
 From: saurabh narang <saurabhnarang@ti.com>
-Date: Wed, 16 Sep 2020 20:22:45 -0500
+Date: Wed, 16 Sep 2020 20:49:14 -0500
 Subject: [PATCH 22/22] wlcore: Adding release version to driver
 
 Signed-off-by: saurabh narang <saurabhnarang@ti.com>
 ---
- drivers/net/wireless/ti/wlcore/main.c            | 3 +++
+ drivers/net/wireless/ti/wlcore/main.c            | 4 ++++
  drivers/net/wireless/ti/wlcore/release_version.h | 1 +
- 2 files changed, 4 insertions(+)
+ 2 files changed, 5 insertions(+)
  create mode 100755 drivers/net/wireless/ti/wlcore/release_version.h
 
 diff --git a/drivers/net/wireless/ti/wlcore/main.c b/drivers/net/wireless/ti/wlcore/main.c
-index 7edc86a..bd03f1f 100644
+index 7edc86a..d3ecb8b 100644
 --- a/drivers/net/wireless/ti/wlcore/main.c
 +++ b/drivers/net/wireless/ti/wlcore/main.c
-@@ -6685,6 +6685,9 @@ static void wlcore_nvs_cb(const struct firmware *fw, void *context)
+@@ -41,6 +41,7 @@
+ #include "scan.h"
+ #include "hw_ops.h"
+ #include "sysfs.h"
++#include "release_version.h"
+ 
+ #define WL1271_BOOT_RETRIES 3
+ #define WL1271_SUSPEND_SLEEP 100
+@@ -6685,6 +6686,9 @@ static void wlcore_nvs_cb(const struct firmware *fw, void *context)
  		goto out_unreg;
  
  	wl->initialized = true;
