@@ -12,6 +12,9 @@ function usage ()
 base_config=(
     CONFIG_WLAN=y
     CONFIG_WIRELESS=y
+    CONFIG_WL18XX=m
+    CONFIG_WLCORE=m
+    CONFIG_WLCORE_SDIO=m
     CONFIG_KEYS=y
     CONFIG_SECURITY=y
     CONFIG_CRYPTO=y
