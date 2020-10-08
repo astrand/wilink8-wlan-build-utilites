@@ -29,7 +29,7 @@ libnl3_4_0
 
 wireless_regdb
 git://git.kernel.org/pub/scm/linux/kernel/git/sforshee/wireless-regdb.git
-master-2018-10-24
+master-2020-04-29
 
 hostap
 git://git.ti.com/wilink8-wlan/hostap.git

@@ -464,7 +464,7 @@ function patch_kernel()
 	echo "using kernel: $KERNEL_PATH"
 	read_kernel_version
 
-        read -p 'Kernel patches are based on Linux Kernel 4.19.38. Do you want to apply these patches to kernel mentioned in setupenv file  [y/n] : ' apply_patches
+        read -p 'Kernel Patches are based on Linux Kernel 4.19.38. Do you want to apply these patches to the Kernel mentioned in setupenv file  [y/n] : ' apply_patches
 
         case $apply_patches in
             "n") APPLY_KERNEL_PATCHES=0; echo "Patches NOT Applied, Exiting" ; exit;;
