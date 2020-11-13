@@ -67,7 +67,7 @@ index 2123f6e..189db05 100644
 +
  #endif /* __MAC80211_DRIVER_OPS */
 diff --git a/net/mac80211/mesh_hwmp.c b/net/mac80211/mesh_hwmp.c
-index 6950cd0..0a1063a 100644
+index 6950cd0bf594..65b53eea1eb2 100644
 --- a/net/mac80211/mesh_hwmp.c
 +++ b/net/mac80211/mesh_hwmp.c
 @@ -12,6 +12,7 @@
@@ -87,28 +87,22 @@ index 6950cd0..0a1063a 100644
  	u32 tx_time, estimated_retx;
  	u64 result;
  	unsigned long fail_avg =
-@@ -339,10 +340,17 @@ static u32 airtime_link_metric_get(struct ieee80211_local *local,
- 		if (fail_avg > LINK_FAIL_THRESH)
+@@ -340,7 +341,14 @@ static u32 airtime_link_metric_get(struct ieee80211_local *local,
  			return MAX_METRIC;
  
--		sta_set_rate_info_tx(sta, &sta->tx_stats.last_rate, &rinfo);
+ 		sta_set_rate_info_tx(sta, &sta->tx_stats.last_rate, &rinfo);
 -		rate = cfg80211_calculate_bitrate(&rinfo);
--		if (WARN_ON(!rate))
--			return MAX_METRIC;
-+	    sta_set_rate_info_tx(sta, &sta->tx_stats.last_rate, &rinfo);
 +
-+	    ret = drv_mesh_get_mbps_estimation(local, &sta->sta, &rate);
-+	    /* if driver has no data for us or has no function
-+	     * for this op, use original implementation
-+	     */
-+	    if (ret < 0)
-+	    	rate = cfg80211_calculate_bitrate(&rinfo);
++		ret = drv_mesh_get_mbps_estimation(local, &sta->sta, &rate);
++		/* if driver has no data for us or has no function
++		 * for this op, use original implementation
++		 */
++		if (ret < 0)
++			rate = cfg80211_calculate_bitrate(&rinfo);
 +
-+	    if (WARN_ON(!rate))
-+	    	return MAX_METRIC;
+ 		if (WARN_ON(!rate))
+ 			return MAX_METRIC;
  
- 		err = (fail_avg << ARITH_SHIFT) / 100;
- 	}
 -- 
 1.9.1
 
