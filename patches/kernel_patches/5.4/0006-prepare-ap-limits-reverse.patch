@@ -1,0 +1,72 @@
+commit 608fd7214323bd3bb2c288f68253e5bb634d4f49
+Author: Nathan Huckleberry <nhuck@google.com>
+Date:   Fri Jun 14 10:17:13 2019 -0700
+
+    wl18xx: Fix Wunused-const-variable
+    
+    Clang produces the following warning
+    
+    drivers/net/wireless/ti/wl18xx/main.c:1850:43: warning: unused variable
+    'wl18xx_iface_ap_cl_limits' [-Wunused-const-variable] static const struct
+    ieee80211_iface_limit wl18xx_iface_ap_cl_limits[] = { ^
+    drivers/net/wireless/ti/wl18xx/main.c:1869:43: warning: unused variable
+    'wl18xx_iface_ap_go_limits' [-Wunused-const-variable] static const struct
+    ieee80211_iface_limit wl18xx_iface_ap_go_limits[] = { ^
+    
+    The commit that added these variables never used them. Removing them.
+    
+    Cc: clang-built-linux@googlegroups.com
+    Link: https://github.com/ClangBuiltLinux/linux/issues/530
+    Signed-off-by: Nathan Huckleberry <nhuck@google.com>
+    Reviewed-by: Nick Desaulniers <ndesaulniers@google.com>
+    Signed-off-by: Kalle Valo <kvalo@codeaurora.org>
+
+diff --git b/drivers/net/wireless/ti/wl18xx/main.c a/drivers/net/wireless/ti/wl18xx/main.c
+index 0b3cf8477c6c..a5e0604d3009 100644
+--- b/drivers/net/wireless/ti/wl18xx/main.c
++++ a/drivers/net/wireless/ti/wl18xx/main.c
+@@ -1847,6 +1847,44 @@ static const struct ieee80211_iface_limit wl18xx_iface_ap_limits[] = {
+ 	},
+ };
+ 
++static const struct ieee80211_iface_limit wl18xx_iface_ap_cl_limits[] = {
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_STATION),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_AP),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_P2P_CLIENT),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
++	},
++};
++
++static const struct ieee80211_iface_limit wl18xx_iface_ap_go_limits[] = {
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_STATION),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_AP),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_P2P_GO),
++	},
++	{
++		.max = 1,
++		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
++	},
++};
++
+ static const struct ieee80211_iface_combination
+ wl18xx_iface_combinations[] = {
+ 	{
